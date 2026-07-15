@@ -1,0 +1,5 @@
+.DS_Store
+pet/
+output/*
+!output/codex-miku-theme.skill
+

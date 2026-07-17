@@ -124,6 +124,7 @@ test("emits the local skin switcher button and control routes", () => {
   assert.match(value, /right: clamp\(156px, 14vw, 208px\)/);
   assert.match(value, /min-width: 104px/);
   assert.match(value, /min-height: 40px/);
+  assert.match(value, /z-index: 90/);
   assert.match(value, /z-index: 1000 !important/);
   assert.match(value, /data-native-overlay="true"/);
   assert.match(value, /pointer-events: none/);

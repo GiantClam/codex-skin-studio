@@ -722,7 +722,7 @@ mark,
   position: fixed;
   top: 8px;
   right: clamp(156px, 14vw, 208px);
-  z-index: 20;
+  z-index: 90;
   color: var(--codex-skin-text);
   font: 600 12px/1.2 ui-rounded, system-ui, sans-serif;
 }

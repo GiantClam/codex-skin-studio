@@ -34,9 +34,14 @@ The contract is format-level evidence from the official bundled Skill. It is
 expected to be shared by the macOS and Windows ChatGPT Desktop distributions.
 The macOS build was inspected and its visible Settings > Pets Refresh,
 selected-row, and embedded custom spritesheet loading postconditions were
-verified. Windows path and
-installation behavior is covered by automated tests; Windows application
-selection still requires a Windows Desktop manual run.
+verified. Windows path and installation behavior is covered by automated tests,
+and the current Windows `OpenAI.Codex` renderer has passed the theme injection
+E2E path. Pet application selection is not yet verified: the clean Windows
+runner did not expose a visible Settings/Preferences control after the standard
+settings shortcut, so the adapter returned
+`PET_NATIVE_UI_UNAVAILABLE: settings-control-not-found`. An authenticated
+Windows Desktop manual run is still required. This is an application UI/auth
+state blocker, not evidence that the v2 atlas contract is invalid.
 
 ## Application behavior and runtime postconditions
 
@@ -54,3 +59,18 @@ sprite sheet is transparent PNG or WebP, exactly `1536 x 1872` pixels, and no
 larger than `20 MiB`. That Web format is not the Desktop v2 package contract.
 
 Source: https://learn.chatgpt.com/docs/pets?surface=app
+
+## Windows acceptance record
+
+The Windows workflow uses the current Microsoft Store Codex product and a
+direct packaged executable launch with loopback CDP flags. The run verified:
+
+- the current renderer target was discovered;
+- the theme was applied successfully;
+- the Pet atlas was installed locally;
+- native Pet Refresh/selection could not be completed on the clean runner.
+
+The last native-selection failure was deliberately preserved as a failed
+acceptance signal rather than converted into a green result. Repeat acceptance
+on an authenticated Windows Desktop session where Settings > Appearance > Pet
+is visible, then record selected-row and loaded-sprite postconditions here.

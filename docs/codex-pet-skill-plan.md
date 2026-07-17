@@ -1,6 +1,6 @@
 # ChatGPT Desktop Codex Pet Skill 方案
 
-> 状态：MVP 实施中；Codex V2 Desktop 契约已冻结，macOS 可见 Settings > Pets Refresh、选择和自定义精灵资源加载已完成真实验证；当前 Desktop 不识别 `/pet` 命令，Windows 手工验收仍待完成
+> 状态：MVP 实施中；Codex V2 Desktop 契约已冻结，macOS 可见 Settings > Pets Refresh、选择和自定义精灵资源加载已完成真实验证；当前 Desktop 不识别 `/pet` 命令；Windows 当前 Codex Renderer 的主题注入已通过 E2E，但干净 Runner 未暴露可见 Settings/Preferences 控件，Pet 原生选择仍待真实登录桌面验收
 > 研究日期：2026-07-17
 > 目标平台：ChatGPT Desktop macOS 和 Windows
 > 关联项目：`codex-skin-studio`
@@ -59,7 +59,7 @@ MVP 不包含：
 2. `create-pet.mjs`、`validate-pet.mjs`、`install-pet.mjs` 已实现，并且不依赖用户手工移动文件。
 3. 失败的验证或安装不会改变已有 Pet。
 4. 一个真实 Pet 在 macOS ChatGPT Desktop 上可 Refresh、选择并显示 Overlay 与动画状态。
-5. Windows 路径和安装流程通过自动化测试；至少完成一次 Windows 手工验证。
+5. Windows 路径和安装流程通过自动化测试；主题注入已在当前 Windows Codex Renderer E2E 通过；Pet 原生选择仍需在有可见 Settings > Appearance > Pet 的真实登录桌面完成一次手工验证。
 6. 生成失败、契约不匹配、透明度失败和应用 Refresh 失败均有明确错误信息。
 7. 所有分发的 `SKILL.md`、脚本、模板、示例 manifest 和日志均为英文 ASCII。
 
@@ -690,4 +690,4 @@ Codex 原生 Image Generation
 - 当前模板 contract 已更新为随 ChatGPT Desktop 提供的 Codex V2 observed contract；`--allow-provisional` 仅保留给未来契约变更的开发测试；
 - 本机 ChatGPT Desktop `26.715.21316` 已发现官方 `hatch-pet` 资源契约；已通过当前 Renderer 的可见 Settings > Pets 控件真实完成 Refresh、匹配 Pet 选择、selected-row postcondition 和 embedded custom WebP sprite loaded postcondition，适配器版本为 `chatgpt-desktop-pets-settings-v1`；实测 `/pet` 返回 “isn’t a recognized command here”，因此不作为当前版本唤醒路径，Windows 仍缺少本机手工验证。
 
-契约冻结已经解除，剩余安全门是 Windows 手工验收。工具可以生成、安装并在当前 macOS UI 中确认 v2 Pet 已选择且自定义 WebP 精灵已加载；当前版本的 `/pet` 已被实测为无效命令，运行 postcondition 应使用可见 Pet 预览/Overlay、资源加载状态和动画状态，不得把无效命令响应误报为唤醒成功。
+契约冻结已经解除，剩余安全门是 Windows Pet 原生选择的已登录桌面验收。工具可以生成、安装并在当前 macOS UI 中确认 v2 Pet 已选择且自定义 WebP 精灵已加载；Windows 主题注入链路已确认，但当前干净 Runner 没有可见 Settings 控件，因此只能返回真实的 `refresh-required` 降级状态。当前版本的 `/pet` 已被实测为无效命令，运行 postcondition 应使用可见 Pet 预览/Overlay、资源加载状态和动画状态，不得把无效命令响应误报为唤醒成功。

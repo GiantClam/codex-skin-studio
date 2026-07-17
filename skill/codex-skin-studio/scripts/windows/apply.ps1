@@ -80,13 +80,35 @@ function Get-StoreAumid {
     return "$($Package.PackageFamilyName)!$($application.Id)"
 }
 
+function Get-StoreExecutable {
+    param($Package)
+    $manifest = Get-AppxPackageManifest -Package $Package.PackageFullName
+    $applications = @($manifest.Package.Applications.Application)
+    $application = $applications |
+        Where-Object { $_.Id -eq "App" -or $_.Executable -match "ChatGPT|Codex" } |
+        Select-Object -First 1
+    if ($application -and $application.Executable) {
+        $candidate = Join-Path $Package.InstallLocation ([string]$application.Executable)
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    foreach ($name in @("app\Codex.exe", "Codex.exe", "app\ChatGPT.exe", "ChatGPT.exe")) {
+        $candidate = Join-Path $Package.InstallLocation $name
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
+
 function Get-LaunchTarget {
     $running = Get-Process -Name ChatGPT, Codex -ErrorAction SilentlyContinue |
         Where-Object { $_.Path } |
         Select-Object -First 1
     if ($running.Path -match "\\WindowsApps\\") {
         $package = Get-StorePackage
-        if ($package) { return "aumid:$(Get-StoreAumid -Package $package)" }
+        if ($package) {
+            $executable = Get-StoreExecutable -Package $package
+            if ($executable) { return $executable }
+            return "aumid:$(Get-StoreAumid -Package $package)"
+        }
     }
     if ($running.Path) { return $running.Path }
 
@@ -105,7 +127,11 @@ function Get-LaunchTarget {
     }
 
     $package = Get-StorePackage
-    if ($package) { return "aumid:$(Get-StoreAumid -Package $package)" }
+    if ($package) {
+        $executable = Get-StoreExecutable -Package $package
+        if ($executable) { return $executable }
+        return "aumid:$(Get-StoreAumid -Package $package)"
+    }
     throw "Codex Desktop was not found"
 }
 

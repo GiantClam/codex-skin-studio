@@ -350,6 +350,11 @@ npm run test:windows
 npm run package:codex-skin-studio
 ```
 
+The repository also includes a manual-dispatch Windows Desktop E2E workflow.
+It installs the official Microsoft Store package, starts ChatGPT Desktop with
+loopback CDP, installs the example Pet, and exercises visible Settings > Pets
+Refresh and selection: [Windows Desktop E2E workflow](.github/workflows/windows-desktop-e2e.yml).
+
 The theme distribution is intentionally zero-dependency and English ASCII-only. The optional Pet atlas tools require `sharp`, using ChatGPT Desktop's bundled Node runtime when available. Theme names and user-facing responses may use any language.
 
 ## Security Boundary

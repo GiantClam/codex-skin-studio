@@ -1,7 +1,7 @@
 # ChatGPT Desktop Skin Skill 商业 MVP 方案
 
 > 状态：建议实施稿
-> 研究基线：`HeiGeAi/heige-codex-skin-studio` `main@7beba21`
+> 研究参考：`HeiGeAi/heige-codex-skin-studio` `main@7beba21`；本项目仅借鉴其研究结论和产品方向，不是完整 Fork 后修改。
 > 研究日期：2026-07-16
 > 目标平台：macOS ChatGPT Desktop
 

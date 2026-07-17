@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart } from "../skill/codex-skin-studio/scripts/apply.mjs";
+import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
-import { buildPlist, createControlServer, parseArgs as parsePersistArgs } from "../skill/codex-skin-studio/scripts/persist.mjs";
+import { buildPlist, buildTaskXml, createControlServer, parseArgs as parsePersistArgs } from "../skill/codex-skin-studio/scripts/persist.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -262,6 +262,37 @@ test("builds an opt-in launch agent that keeps the renderer debuggable", () => {
   assert.match(buildPlist(), /persist\.mjs/);
 });
 
+test("builds a Windows Task Scheduler worker with quoted paths", () => {
+  const task = buildTaskXml({ nodePath: "C:\\Program Files\\nodejs\\node.exe", scriptPath: "C:\\Users\\Test User\\codex-skin-studio\\scripts\\persist.mjs", port: 9341, controlPort: 9342 });
+  assert.match(task, /<LogonTrigger>/);
+  assert.match(task, /<Command>C:\\Program Files\\nodejs\\node\.exe<\/Command>/);
+  assert.match(task, /persist\.mjs/);
+  assert.match(task, /persistence-worker/);
+});
+
+test("discovers a Windows executable candidate and parses tasklist output", async () => {
+  await withTempDir("codex-skin-win-", async (root) => {
+    const executable = join(root, "ChatGPT.exe");
+    await writeFile(executable, Buffer.from([0]));
+    assert.equal(appInfoSync(executable, "win32").valid, true);
+    assert.ok(appCandidates("win32").some((candidate) => candidate.toLowerCase().endsWith("chatgpt.exe")));
+  });
+  const pids = await processIds("ChatGPT.exe", {
+    platformFn: () => "win32",
+    execFileFn: async () => ({ stdout: '"ChatGPT.exe","4120","Console","1","100,000 K"\r\n"ChatGPT.exe","8120","Console","1","110,000 K"\r\n' }),
+  });
+  assert.deepEqual(pids, [4120, 8120]);
+});
+
+test("discovers Microsoft Store ChatGPT package executable candidates", () => {
+  const candidates = windowsStoreCandidates((command, args) => {
+    assert.equal(command, "powershell.exe");
+    assert.deepEqual(args.slice(0, 3), ["-NoProfile", "-NonInteractive", "-Command"]);
+    return { stdout: "C:\\Program Files\\WindowsApps\\OpenAI.ChatGPT\\app\\ChatGPT.exe\r\n" };
+  });
+  assert.deepEqual(candidates, ["C:\\Program Files\\WindowsApps\\OpenAI.ChatGPT\\app\\ChatGPT.exe"]);
+});
+
 test("rejects a hero symlink that resolves outside the theme directory", async () => {
   await withTempDir("codex-skin-outside-", async (outside) => {
     await writeFile(join(outside, "hero.png"), Buffer.from([1]));
@@ -428,6 +459,28 @@ test("restart worker delays, quits, waits, relaunches with loopback CDP, and inj
   assert.equal(stateWrites[1].restartPending, false);
 });
 
+test("restart worker uses Windows executable launch arguments", async () => {
+  const events = [];
+  await restartWorker(9341, {
+    platformFn: () => "win32",
+    delayFn: async () => {},
+    discoverFn: () => "C:\\Users\\Test User\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe",
+    appInfoFn: () => ({ valid: true, executable: "ChatGPT.exe" }),
+    quitFn: async () => events.push("quit"),
+    processIdsFn: async () => [],
+    launchFn: async (args) => events.push(args),
+    targetsFn: async () => [{ id: "main" }],
+    selectTargetFn: async (list) => list[0],
+    savedThemeFn: async () => ({ destination: "/tmp/theme", manifest: validManifest }),
+    injectFn: async () => events.push("inject"),
+    readStateFn: async () => ({}),
+    writeStateFn: async () => {},
+  });
+  assert.deepEqual(events[0], "quit");
+  assert.deepEqual(events[1], ["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=9341"]);
+  assert.equal(events[2], "inject");
+});
+
 test("restart worker does not mark active when every ready-target injection fails", async () => {
   let now = 0;
   const writes = [];
@@ -524,7 +577,7 @@ test("restart worker normal uses only injected state callbacks and confirms proc
   assert.equal(events.some((event) => event === "real-state-write"), false);
 });
 
-test("restart worker default platform gate performs no state access on non-darwin", async () => {
+test("restart worker default platform gate performs no state access on unsupported platforms", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
   let reads = 0;
   let writes = 0;
@@ -533,7 +586,7 @@ test("restart worker default platform gate performs no state access on non-darwi
     await assert.rejects(restartWorker(9341, {
       readStateFn: async () => { reads += 1; return {}; },
       writeStateFn: async () => { writes += 1; },
-    }), /macOS-only/);
+    }), /macOS and Windows only/);
   } finally {
     Object.defineProperty(process, "platform", descriptor);
   }
@@ -932,13 +985,13 @@ test("restore scheduling is reflected by status until the worker completes", asy
   assert.equal(restored.status, "unavailable");
 });
 
-test("macOS-only commands reject before side effects", async () => {
+test("unsupported-platform commands reject before side effects", async () => {
   for (const command of [
     () => commandApply("/tmp/theme", 9341, { platformFn: () => "linux", persistFn: async () => { throw new Error("side effect"); } }),
     () => commandStatus(9341, { platformFn: () => "linux", targetsFn: async () => { throw new Error("side effect"); } }),
     () => commandRestore(9341, false, { platformFn: () => "linux", targetsFn: async () => { throw new Error("side effect"); } }),
     () => restartWorker(9341, { platformFn: () => "linux", discoverFn: () => { throw new Error("side effect"); } }),
-  ]) await assert.rejects(command, /macOS-only/);
+  ]) await assert.rejects(command, /macOS and Windows only/);
 });
 
 test("readState only treats missing state as empty", async () => {

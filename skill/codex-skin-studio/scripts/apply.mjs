@@ -2,6 +2,7 @@
 
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { statSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +15,13 @@ const SWITCHER_ID = "codex-skin-studio-switcher";
 const BUNDLE_ID = "com.openai.codex";
 const APP_DISPLAY_NAME = "ChatGPT Desktop";
 const EXPECTED_TEAM_ID = "2DC432GLL2";
-const ROOT = join(homedir(), "Library", "Application Support", "CodexSkinStudio");
+const SUPPORTED_PLATFORMS = new Set(["darwin", "win32"]);
+function appDataRoot(platformName = platform()) {
+  if (platformName === "win32") return process.env.APPDATA || join(homedir(), "AppData", "Roaming");
+  if (platformName === "darwin") return join(homedir(), "Library", "Application Support");
+  return process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+}
+const ROOT = join(appDataRoot(), "CodexSkinStudio");
 const THEMES = join(ROOT, "themes");
 const STATE = join(ROOT, "state.json");
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -186,7 +193,25 @@ async function listThemes(themesDir = THEMES) {
   return themes;
 }
 
-function appCandidates() {
+function isSupportedPlatform(platformName = platform()) {
+  return SUPPORTED_PLATFORMS.has(platformName);
+}
+
+function appCandidates(platformName = platform()) {
+  if (platformName === "win32") {
+    const localAppData = process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
+    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+    const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    return [
+      join(localAppData, "Programs", "ChatGPT", "ChatGPT.exe"),
+      join(localAppData, "Programs", "OpenAI", "ChatGPT.exe"),
+      join(localAppData, "ChatGPT", "ChatGPT.exe"),
+      join(programFiles, "ChatGPT", "ChatGPT.exe"),
+      join(programFiles, "OpenAI", "ChatGPT", "ChatGPT.exe"),
+      join(programFilesX86, "ChatGPT", "ChatGPT.exe"),
+      join(localAppData, "Microsoft", "WindowsApps", "ChatGPT.exe"),
+    ];
+  }
   return [
     "/Applications/ChatGPT.app",
     "/Applications/Codex.app",
@@ -195,14 +220,32 @@ function appCandidates() {
   ];
 }
 
-function appPath() {
-  for (const path of appCandidates()) {
-    if (appInfoSync(path)?.valid) return path;
+function appPath(platformName = platform()) {
+  for (const path of appCandidates(platformName)) {
+    if (appInfoSync(path, platformName)?.valid) return path;
   }
   return null;
 }
 
-function appInfoSync(path) {
+function windowsStoreCandidates(execFn = execFileSync) {
+  try {
+    const script = "$packages = Get-AppxPackage | Where-Object { $_.Name -match 'ChatGPT|OpenAI' }; $packages | ForEach-Object { Join-Path $_.InstallLocation 'app\\ChatGPT.exe'; Join-Path $_.InstallLocation 'ChatGPT.exe' }";
+    return execFn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).stdout.trim().split(/\r?\n/).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function appInfoSync(path, platformName = platform()) {
+  if (platformName === "win32") {
+    try {
+      if (!path || !path.toLowerCase().endsWith(".exe") || !statSync(path).isFile()) return null;
+      const executable = basename(path);
+      return { valid: true, bundleId: null, executable, executablePath: path, teamId: null, signatureValid: null, platform: platformName };
+    } catch {
+      return null;
+    }
+  }
   try {
     const bundleId = execFileSync("/usr/bin/defaults", ["read", join(path, "Contents/Info.plist"), "CFBundleIdentifier"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     const executable = execFileSync("/usr/bin/defaults", ["read", join(path, "Contents/Info.plist"), "CFBundleExecutable"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -212,23 +255,35 @@ function appInfoSync(path) {
     const signature = spawnSync("/usr/bin/codesign", ["-dv", "--verbose=4", path], { encoding: "utf8" });
     teamId = `${signature.stdout || ""}\n${signature.stderr || ""}`.match(/TeamIdentifier=([^\n]+)/)?.[1] || null;
     const signatureValid = signature.status === 0 && teamId === EXPECTED_TEAM_ID;
-    return { valid: bundleId === BUNDLE_ID && signatureValid, bundleId, executable, executablePath, teamId, signatureValid };
+    return { valid: bundleId === BUNDLE_ID && signatureValid, bundleId, executable, executablePath, teamId, signatureValid, platform: platformName };
   } catch {
     return null;
   }
 }
 
-function discover() {
+function discover(platformName = platform()) {
+  if (platformName === "win32") {
+    const paths = [];
+    for (const executable of ["ChatGPT.exe", "Codex.exe"]) {
+      try {
+        paths.push(...execFileSync("where.exe", [executable], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\r?\n/).filter(Boolean));
+      } catch {
+        // The fixed candidate scan remains the compatibility path.
+      }
+    }
+    for (const path of [...paths, ...windowsStoreCandidates(), ...appCandidates(platformName)]) if (appInfoSync(path, platformName)?.valid) return path;
+    return null;
+  }
   try {
     const paths = execFileSync("/usr/bin/mdfind", [`kMDItemCFBundleIdentifier == '${BUNDLE_ID}'`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim().split("\n").filter(Boolean);
-    for (const path of paths) if (appInfoSync(path)?.valid) return path;
+    for (const path of paths) if (appInfoSync(path, platformName)?.valid) return path;
   } catch {
     // Spotlight is optional; the fixed candidate scan remains the compatibility path.
   }
-  return appPath();
+  return appPath(platformName);
 }
 
 async function targets(port, timeoutMs = 2000) {
@@ -1148,11 +1203,44 @@ async function spawnRestartWorker(port, { normal = false, spawnFn = spawn } = {}
   return child.pid;
 }
 
-async function processIds(executable) {
-  try { return (await execFileAsync("/usr/bin/pgrep", ["-x", executable], { timeout: 2000 })).stdout.trim().split("\n").filter(Boolean).map(Number); } catch (error) {
+async function processIds(executable, { platformFn = platform, execFileFn = execFileAsync } = {}) {
+  if (platformFn() === "win32") {
+    const name = basename(executable);
+    try {
+      const output = (await execFileFn("tasklist.exe", ["/FI", `IMAGENAME eq ${name}`, "/FO", "CSV", "/NH"], { timeout: 3000 })).stdout;
+      return output.split(/\r?\n/).map((line) => line.match(/^"[^"]+","(\d+)"/)?.[1]).filter(Boolean).map(Number);
+    } catch (error) {
+      if (/no tasks|not found/i.test(String(error?.stdout || ""))) return [];
+      throw error;
+    }
+  }
+  try { return (await execFileFn("/usr/bin/pgrep", ["-x", executable], { timeout: 2000 })).stdout.trim().split("\n").filter(Boolean).map(Number); } catch (error) {
     if (error.code === 1) return [];
     throw error;
   }
+}
+
+function launchApplication(app, port, platformName = platform(), normal = false) {
+  const args = normal ? [] : ["--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${port}`];
+  if (platformName === "win32") {
+    const child = spawn(app, args, { detached: true, stdio: "ignore", windowsHide: true });
+    child.unref();
+    return child;
+  }
+  const child = spawn("/usr/bin/open", ["-na", app, ...(normal ? [] : ["--args", ...args])], { detached: true, stdio: "ignore" });
+  child.unref();
+  return child;
+}
+
+async function quitApplication(info, pids = [], platformName = platform()) {
+  if (platformName === "win32") {
+    if (!pids.length) return;
+    await Promise.all(pids.map((pid) => execFileAsync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { timeout: 5000 }).catch((error) => {
+      if (!/not found|no running instance/i.test(String(error?.stderr || error?.message || ""))) throw error;
+    })));
+    return;
+  }
+  await execFileAsync("/usr/bin/osascript", ["-e", `tell application id ${JSON.stringify(BUNDLE_ID)} to quit`], { timeout: 5000 });
 }
 
 function isPidRunning(pid, { processKillFn = process.kill } = {}) {
@@ -1191,7 +1279,8 @@ async function cancelWorker(pid, { processKillFn = process.kill, isPidRunning: i
 }
 
 async function restartWorkerCoreImpl(port, { normal = false, requireArmed = false, processPidFn = () => process.pid, delayFn = delay, nowFn = Date.now, restartTimeoutMs = 20000, platformFn = platform, discoverFn = discover, appInfoFn = appInfoSync, quitFn, launchFn, targetsFn = targets, selectTargetFn = selectMainTarget, injectFn = injectTheme, savedThemeFn = savedTheme, readStateFn = readState, writeStateFn = writeState, processIdsFn = processIds, isPidRunning, processExitConfirmedFn } = {}) {
-  if (platformFn() !== "darwin") throw new Error("Codex Skin Studio is macOS-only");
+  const currentPlatform = platformFn();
+  if (!isSupportedPlatform(currentPlatform)) throw new Error("Codex Skin Studio supports macOS and Windows only");
   await delayFn(1500);
   if (requireArmed) {
     const armed = await readStateFn();
@@ -1201,8 +1290,8 @@ async function restartWorkerCoreImpl(port, { normal = false, requireArmed = fals
   if (!app) throw new Error(`${APP_DISPLAY_NAME} application was not found`);
   const info = appInfoFn(app);
   if (!info?.valid) throw new Error(`${APP_DISPLAY_NAME} application validation failed`);
-  const quit = quitFn || (() => execFileAsync("/usr/bin/osascript", ["-e", `tell application id ${JSON.stringify(BUNDLE_ID)} to quit`], { timeout: 5000 }));
   const oldPids = await processIdsFn(info.executable);
+  const quit = quitFn || (() => quitApplication(info, oldPids, currentPlatform));
   await quit();
   if (!await waitForProcessExit(oldPids, { isPidRunning, delayFn })) throw new Error("Codex process did not exit after quit request");
   let processExited = true;
@@ -1210,8 +1299,10 @@ async function restartWorkerCoreImpl(port, { normal = false, requireArmed = fals
     processExitConfirmedFn?.();
     const prior = await readStateFn();
     await writeStateFn({ ...(prior || {}), active: false, restartPending: true });
-    const args = normal ? ["-na", app] : ["-na", app, "--args", "--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${port}`];
-    const launch = launchFn || (() => { const child = spawn("/usr/bin/open", args, { detached: true, stdio: "ignore" }); child.unref(); });
+    const args = currentPlatform === "win32"
+      ? (normal ? [] : ["--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${port}`])
+      : (normal ? ["-na", app] : ["-na", app, "--args", "--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${port}`]);
+    const launch = launchFn || (() => launchApplication(app, port, currentPlatform, normal));
     await launch(args);
     if (normal) {
       if (!await waitForProcessStart(info.executable, { processIdsFn, delayFn })) throw new Error("Codex process did not start after launch");
@@ -1257,7 +1348,7 @@ async function restartWorkerCore(port, options = {}) {
 
 async function restartWorker(port, options = {}) {
   const platformFn = options.platformFn || platform;
-  if (platformFn() !== "darwin") throw new Error("Codex Skin Studio is macOS-only");
+  if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   try {
     return await restartWorkerCore(port, { ...options, platformFn });
   } catch (error) {
@@ -1278,20 +1369,20 @@ async function restartWorker(port, options = {}) {
 
 async function commandDoctor() {
   const currentPlatform = platform();
-  const app = currentPlatform === "darwin" ? discover() : null;
+  const app = isSupportedPlatform(currentPlatform) ? discover(currentPlatform) : null;
   const info = app ? appInfoSync(app) : null;
   const runtime = { fetch: typeof fetch === "function", webSocket: typeof WebSocket === "function" };
-  const valid = currentPlatform === "darwin" && Boolean(info?.valid) && runtime.fetch && runtime.webSocket;
+  const valid = isSupportedPlatform(currentPlatform) && Boolean(info?.valid) && runtime.fetch && runtime.webSocket;
   return {
     status: valid ? "ok" : "failed",
     platform: currentPlatform,
-    bundleId: BUNDLE_ID,
+    bundleId: currentPlatform === "darwin" ? BUNDLE_ID : null,
     appPath: app,
     executable: info?.executable || null,
     executablePath: info?.executablePath || null,
     signatureTeamId: info?.teamId || null,
     signatureValid: info?.signatureValid ?? null,
-    expectedTeamId: EXPECTED_TEAM_ID,
+    expectedTeamId: currentPlatform === "darwin" ? EXPECTED_TEAM_ID : null,
     runtime,
     cdpLoopbackOnly: true,
     asarModification: false,
@@ -1305,7 +1396,7 @@ async function commandValidate(dir) {
 }
 
 async function commandApply(dir, port, { persistFn = persist, writeStateFn = writeState, readStateFn = readState, removeStateFn = removeState, targetsFn = targets, spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, injectFn = injectTheme, platformFn = platform } = {}) {
-  if (platformFn() !== "darwin") throw new Error("Codex Skin Studio is macOS-only");
+  if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   let theme;
   try { theme = await loadTheme(dir); } catch (error) { error.code = "THEME_INVALID"; throw error; }
   const saved = await persistFn(theme, { deferred: true });
@@ -1364,7 +1455,7 @@ async function commandApply(dir, port, { persistFn = persist, writeStateFn = wri
 }
 
 async function commandStatus(port, { targetsFn = targets, selectTargetFn = selectMainTarget, evaluateListFn = evaluateAll, readStateFn = readState, platformFn = platform } = {}) {
-  if (platformFn() !== "darwin") throw new Error("Codex Skin Studio is macOS-only");
+  if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   const state = await readStateFn();
   let live = [];
   try {
@@ -1383,7 +1474,7 @@ async function commandStatus(port, { targetsFn = targets, selectTargetFn = selec
 }
 
 async function commandRestore(port, restartNormal, { spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, targetsFn = targets, selectTargetFn = selectMainTarget, evaluateListFn = evaluateAll, readStateFn = readState, writeStateFn = writeState, removeStateFn = removeState, platformFn = platform } = {}) {
-  if (platformFn() !== "darwin") throw new Error("Codex Skin Studio is macOS-only");
+  if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   let removed = 0;
   let restoreError = null;
   let removalConfirmed = false;
@@ -1460,7 +1551,7 @@ async function main() {
   console.log(args.jsonOutput ? json(result) : result.message || json(result));
 }
 
-export { appInfoSync, assetFlags, cancelWorker, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, writeState, EXPECTED_TEAM_ID, Session };
+export { appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     const result = fail(commandErrorCode(error), error.message);

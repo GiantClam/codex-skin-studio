@@ -2,13 +2,13 @@
 
 [English README](README.md)
 
-面向 macOS ChatGPT Desktop 的 AI 换肤 Skill 与轻量运行时。
+面向 macOS 和 Windows ChatGPT Desktop 的 AI 换肤 Skill 与轻量运行时。
 
-本仓库包含 `codex-skin-studio` Codex Skill 以及零依赖 Node.js 工具链。Skill 可以把生图结果或用户提供的图片制作成完整主题，校验本地资源，通过本机回环 CDP 应用到 ChatGPT Desktop，并通过 macOS LaunchAgent 在电脑登录、应用启动和 Renderer 重载后自动恢复。
+本仓库包含 `codex-skin-studio` Codex Skill 以及零依赖 Node.js 工具链。Skill 可以把生图结果或用户提供的图片制作成完整主题，校验本地资源，通过本机回环 CDP 应用到 ChatGPT Desktop，并通过 macOS LaunchAgent 或 Windows Task Scheduler 在电脑登录、应用启动和 Renderer 重载后自动恢复。
 
 本项目仅将 [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) 作为研究和设计参考，独立实现轻量版本，不是对其完整仓库 Fork 后修改，也不宣称功能完全一致。当前范围是 Codex Skill 加本地零依赖运行时，后续计划独立扩展皮肤网站能力。
 
-当前应用名称是 ChatGPT Desktop，技术 Bundle ID 为 `com.openai.codex`。
+当前应用名称是 ChatGPT Desktop。macOS 技术 Bundle ID 为 `com.openai.codex`；Windows 使用 ChatGPT 可执行文件。
 
 ## 核心能力
 
@@ -18,7 +18,7 @@
 - 一次性生成 `hero`、`theme.json`、可选 Logo、可选肖像卡和品牌文案。
 - 品牌名只替换顶部 workspace label，不误伤项目 Session 和账户区域。
 - 只通过 `127.0.0.1` 本机 CDP 通信。
-- 可选 macOS LaunchAgent，自动处理登录、应用启动和 Renderer 重载。
+- 可选 macOS LaunchAgent 或 Windows Task Scheduler，自动处理登录、应用启动和 Renderer 重载。
 - 对话区域右上角提供 `Skins` 按钮，可以直接切换本地已生成的有效主题。
 - 不修改 `app.asar`，不修改应用签名，不需要网站、数据库、远程服务或任意主题 CSS。
 - Skill 分发文件全部使用英文 ASCII；Skill 可以用中文或其他语言回复用户。
@@ -44,7 +44,7 @@ validate -> persist -> apply.mjs -> 本机回环 CDP
                               ChatGPT Desktop
                                       ^
                                       |
-                         可选 macOS LaunchAgent
+                         可选平台持久化 worker
 ```
 
 Skill 负责 Agent 编排；`create-theme.mjs` 负责一次性生成完整主题目录；`apply.mjs` 负责发现经过签名校验的 ChatGPT Desktop、选择主 Renderer、注入并验证样式；`persist.mjs` 负责长期运行的自动恢复 worker。启用持久化后，worker 还会在 `127.0.0.1:9342` 提供仅本机访问的主题控制接口，右上角 `Skins` 按钮通过主题 ID 切换有效本地主题，不接受任意文件路径或命令。原生菜单（包括文件“打开方式”菜单）展开时，按钮会临时隐藏并释放点击区域，菜单关闭后自动恢复。按钮支持在对话区域内拖拽，普通点击打开主题菜单，拖拽后位置会保存在当前 Renderer 的本地存储中。
@@ -80,8 +80,9 @@ output/
 └── codex-skin-studio.skill
 ```
 
-生成的主题属于用户数据，保存在
-`~/Library/Application Support/CodexSkinStudio/themes/`。仓库额外内置
+生成的主题属于用户数据，macOS 保存在
+`~/Library/Application Support/CodexSkinStudio/themes/`，Windows 保存在
+`%APPDATA%\\CodexSkinStudio\\themes\\`。仓库额外内置
 `examples/slayers-xellos-night/` 作为默认示例皮肤；示例资源的权利说明见
 [NOTICE.md](NOTICE.md)。
 
@@ -218,7 +219,7 @@ node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" install --json
 
 ## 持久化 Worker
 
-CDP 注入的 CSS 存在于 Renderer 内存中，ChatGPT Desktop 完整重启后会消失。LaunchAgent 在不修改应用包的情况下解决这个问题：
+CDP 注入的 CSS 存在于 Renderer 内存中，ChatGPT Desktop 完整重启后会消失。平台原生 worker 在不修改应用包的情况下解决这个问题：
 
 ```bash
 node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" install --json
@@ -226,9 +227,24 @@ node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" status --json
 node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" uninstall --json
 ```
 
-worker 是由 macOS `launchd` 管理的独立 Node.js 进程，不是 ChatGPT Desktop 内部进程。它使用本机回环 CDP，监听选中的 Renderer，并在用户登录、应用启动或 Renderer 重载后重新注入主题。
+macOS worker 是由 `launchd` 管理的独立 Node.js 进程；Windows worker 是由用户级 Windows Task Scheduler 任务 `CodexSkinStudio` 在交互式登录时启动的独立 Node.js 进程。两者都使用本机回环 CDP，监听选中的 Renderer，并在用户登录、应用启动或 Renderer 重载后重新注入主题。
 
-不要使用 ChatGPT Scheduled Task 代替本地 LaunchAgent。Scheduled Task 没有可靠的本机进程和应用生命周期钩子。
+不要使用 ChatGPT Scheduled Task 代替本地 OS worker。它与本地持久化进程无关，不能提供需要的应用生命周期钩子。
+
+### Windows
+
+在 PowerShell 或命令提示符中使用相同的 Node.js 命令。运行时会依次检查
+`%LOCALAPPDATA%`、`%ProgramFiles%` 下的常见 ChatGPT 安装位置、Microsoft Store
+包安装目录，并回退到 `where.exe`。首次明确应用主题时，重启 worker 会使用本机回环 CDP 参数启动
+ChatGPT Desktop。需要登录和 Renderer 重载后自动恢复时，显式执行：
+
+```powershell
+node "$env:USERPROFILE\\.codex\\skills\\codex-skin-studio\\scripts\\persist.mjs" install --json
+node "$env:USERPROFILE\\.codex\\skills\\codex-skin-studio\\scripts\\persist.mjs" status --json
+```
+
+该命令会创建用户级 `CodexSkinStudio` Task Scheduler 任务，不需要管理员权限，
+也不会修改 ChatGPT 安装目录。
 
 ## 检查与恢复
 
@@ -281,7 +297,7 @@ Skill 分发内容保持零依赖和英文 ASCII-only。主题名称和用户回
 - 主题资源必须是主题目录内的本地文件。
 - Manifest 字段经过校验，主题不能提供任意 CSS 或 JavaScript。
 - 永不修改应用包和代码签名。
-- 持久化使用用户级 LaunchAgent，可通过 `persist.mjs uninstall` 移除。
+- 持久化使用用户级 macOS LaunchAgent 或 Windows Task Scheduler，可通过 `persist.mjs uninstall` 移除。
 
 ## 许可证
 

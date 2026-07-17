@@ -1,9 +1,10 @@
 # ChatGPT Desktop Skin Skill 商业 MVP 方案
 
 > 状态：建议实施稿
+> 范围更新：当前轻量运行时已支持 macOS 和 Windows ChatGPT Desktop，共用本机回环 CDP 注入器；macOS 使用 LaunchAgent 持久化，Windows 使用用户级 Task Scheduler worker。Linux 仍不在支持范围内。
 > 研究参考：`HeiGeAi/heige-codex-skin-studio` `main@7beba21`；本项目仅借鉴其研究结论和产品方向，不是完整 Fork 后修改。
 > 研究日期：2026-07-16
-> 目标平台：macOS ChatGPT Desktop
+> 目标平台：macOS 和 Windows ChatGPT Desktop
 
 > 命名说明：当前产品名为 ChatGPT Desktop，技术 bundle ID 仍为 `com.openai.codex`。`/Applications/ChatGPT.app` 是规范路径，`/Applications/Codex.app` 仅作为旧命名兼容路径保留。
 >
@@ -67,10 +68,10 @@ Codex Skill
 
 - ChatGPT Desktop 后续版本是否继续接受 `--remote-debugging-port`。
 - 官方 DOM 类名和属性长期稳定性。
-- Windows/Linux 的应用路径、进程模型和 CDP 启动参数。
+- Linux 的应用路径、进程模型和 CDP 启动参数。
 - 图片生成工具在所有 Codex 客户端版本中的本地文件交付方式。
 
-因此 P0 只承诺当前 macOS 版本，并要求 `doctor`、注入后验证和明确失败信息。
+因此 P0 承诺当前 macOS 和 Windows 版本，并要求 `doctor`、注入后验证和明确失败信息。
 
 ## 3. 第一阶段目标与非目标
 
@@ -86,19 +87,19 @@ Codex Skill
 8. 支持 `doctor`、`validate`、`apply`、`status`、`restore`。
 9. 所有命令返回稳定 JSON，便于 Skill 判断成功、失败或“已安排重启”。
 10. 使用一个确定性 `create-theme.mjs` 完成 `hero`、可选资源和 `theme.json` 的一次性生成与校验。
-11. 提供显式启用的 macOS LaunchAgent 持久模式，在 renderer 重启后自动重新注入当前主题。
+11. 提供显式启用的平台原生持久模式：macOS 使用 LaunchAgent，Windows 使用 Task Scheduler，在 renderer 重启后自动重新注入当前主题。
 12. 最终分发的 Skill、脚本、模板、示例、代码注释、日志和诊断信息全部使用英文。
 
 ### 3.2 非目标
 
 - 不做网站、账号、数据库、云端生成、支付和 Marketplace。
-- 不默认安装常驻 helper 或 LaunchAgent；持久模式必须由用户显式启用并可卸载。
+- 不默认安装常驻 helper 或平台原生 worker；持久模式必须由用户显式启用并可卸载。
 - 不做 Codex 内主题切换菜单。
 - 不做浏览器端图片上传和自动取色算法。
 - 不默认建设独立抠图服务或保存透明中间资产；优先让 Image Generation 直接完成物体保真编辑与场景合成。
 - 不做多层素材、组件皮肤、Logo 替换、拍立得挂件或桌宠。
 - 不修改应用包、签名、ASAR 或官方业务 JavaScript。
-- 不承诺 Windows/Linux。
+- 不承诺 Linux。
 - 不在 Skill 包内分发 Miku、游戏角色或其他第三方 IP 预设。
 
 ## 4. 最小目录
@@ -643,14 +644,14 @@ CSS 原则：
 
 CDP 注入的 style 只存在于 renderer 内存，正常退出、renderer 完整重载或应用更新后都会消失。保存主题文件不能解决这个生命周期问题。
 
-Skill 安装本身只复制文件，不执行后台进程。用户首次明确应用或替换主题时，Skill 自动检查并安装 `persist.mjs install`；仅生成设计时不安装。该命令会安装用户级 LaunchAgent，运行一个低权限、回环地址限定的 worker：
+Skill 安装本身只复制文件，不执行后台进程。用户首次明确应用或替换主题时，Skill 自动检查并安装 `persist.mjs install`；仅生成设计时不安装。该命令会在 macOS 安装用户级 LaunchAgent，在 Windows 安装用户级 Task Scheduler 任务，运行一个低权限、回环地址限定的 worker：
 
 1. 以 `127.0.0.1:9341` 启动 ChatGPT Desktop。
 2. 发现 renderer 后检查当前主题的注入状态。
 3. 注入缺失或 theme id 不匹配时重新注入已保存主题。
-4. 用户显式执行 `persist.mjs uninstall` 后停止并删除 LaunchAgent。
+4. 用户显式执行 `persist.mjs uninstall` 后停止并删除对应的平台 worker。
 
-不使用 ChatGPT Scheduled Task 代替 LaunchAgent。Scheduled Task 不提供可靠的本机 macOS 进程、`127.0.0.1:9341` CDP 访问或 App 生命周期钩子；电脑登录和 ChatGPT Desktop 启动后的自动注入必须由 `launchd` 管理。
+不使用 ChatGPT Scheduled Task 代替本地平台 worker。macOS 使用 `launchd`，Windows 使用 Task Scheduler；两者负责电脑登录和 ChatGPT Desktop 启动后的自动注入，并通过 `127.0.0.1:9341` 访问 CDP。
 
 该模式属于应用主题后的默认生命周期组件，不改变 `app.asar`，也不把图片生成或主题创建放入后台 worker。它可能在用户普通启动或退出应用时接管应用生命周期，因此 Skill 必须在首次启用时说明，并提供 `persist.mjs uninstall`。
 

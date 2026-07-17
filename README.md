@@ -2,13 +2,13 @@
 
 [中文 README](README.zh-CN.md)
 
-AI-orchestrated skins for ChatGPT Desktop on macOS.
+AI-orchestrated skins for ChatGPT Desktop on macOS and Windows.
 
-This repository contains the `codex-skin-studio` Codex Skill and its zero-dependency Node.js runtime. The Skill turns a generated or user-provided image into a complete ChatGPT Desktop theme, validates the local assets, applies the theme through loopback CDP, and can keep the selected theme alive across app and computer restarts through a macOS LaunchAgent.
+This repository contains the `codex-skin-studio` Codex Skill and its zero-dependency Node.js runtime. The Skill turns a generated or user-provided image into a complete ChatGPT Desktop theme, validates the local assets, applies the theme through loopback CDP, and can keep the selected theme alive across app and computer restarts through macOS `launchd` or Windows Task Scheduler.
 
 This project uses [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) as a research and design reference. It is an independent lightweight implementation, not a complete fork with modifications, and does not claim feature parity. The current scope is a Codex Skill plus a local zero-dependency runtime; a dedicated skin website is planned as a separate expansion.
 
-The current application is ChatGPT Desktop. Its technical bundle identifier is `com.openai.codex`.
+The current application is ChatGPT Desktop. macOS identifies it with bundle identifier `com.openai.codex`; Windows uses the ChatGPT executable.
 
 ## Highlights
 
@@ -18,7 +18,7 @@ The current application is ChatGPT Desktop. Its technical bundle identifier is `
 - One-shot theme creation with `hero`, `theme.json`, optional logo, optional portrait card, and optional brand copy.
 - Scoped CSS injection that replaces only the top workspace label and preserves project session controls and account controls.
 - Local-only CDP communication on `127.0.0.1`.
-- Optional macOS LaunchAgent persistence for login, app launch, and renderer reload recovery.
+- Optional macOS LaunchAgent or Windows Task Scheduler persistence for login, app launch, and renderer reload recovery.
 - Upper-right `Skins` switcher for selecting any valid locally generated theme without leaving the conversation.
 - No `app.asar` modification, code-signature changes, database, website, remote service, or arbitrary theme CSS.
 - English-only Skill distribution files; the Skill can respond to users in their language.
@@ -44,10 +44,10 @@ validate -> persist -> apply.mjs -> loopback CDP
                               ChatGPT Desktop
                                       ^
                                       |
-                         optional macOS LaunchAgent
+                         optional platform persistence worker
 ```
 
-The Skill is the agent layer. `create-theme.mjs` creates a complete local theme directory. `apply.mjs` discovers the signed ChatGPT Desktop app, selects the main renderer, injects one verified style element, persists the theme, and reports a truthful status. `persist.mjs` runs the long-lived recovery worker when persistence is enabled.
+The Skill is the agent layer. `create-theme.mjs` creates a complete local theme directory. `apply.mjs` discovers ChatGPT Desktop, selects the main renderer, injects one verified style element, persists the theme, and reports a truthful status. `persist.mjs` runs the long-lived recovery worker when persistence is enabled.
 
 When persistence is enabled, the worker also exposes a loopback-only control endpoint on `127.0.0.1:9342`. The injected upper-right `Skins` button uses it to list valid local themes and request a switch by theme id. It reuses the normal validation and CDP application path; it does not accept arbitrary filesystem paths or commands.
 
@@ -86,8 +86,9 @@ output/
 └── codex-skin-studio.skill
 ```
 
-Generated themes are user data, stored under
-`~/Library/Application Support/CodexSkinStudio/themes/`. The repository also
+Generated themes are user data, stored under macOS
+`~/Library/Application Support/CodexSkinStudio/themes/` or Windows
+`%APPDATA%\\CodexSkinStudio\\themes\\`. The repository also
 includes `examples/slayers-xellos-night/` as the default bundled example skin;
 see [NOTICE.md](NOTICE.md) for the example asset rights notice.
 
@@ -233,7 +234,7 @@ Current runtime media support is PNG, JPEG, and WebP. GIF and video backgrounds 
 
 ## Persistence
 
-CDP CSS lives in renderer memory and normally disappears after a full app restart. The optional LaunchAgent solves this without modifying the application package:
+CDP CSS lives in renderer memory and normally disappears after a full app restart. The optional platform-native worker solves this without modifying the application package:
 
 ```bash
 node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" install --json
@@ -241,9 +242,26 @@ node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" status --json
 node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" uninstall --json
 ```
 
-The worker is a separate Node.js process managed by macOS `launchd`. It uses loopback CDP, watches for the selected renderer, and reapplies the persisted theme after login, app launch, or renderer reload. It does not generate images or modify `app.asar`.
+On macOS, the worker is a separate Node.js process managed by `launchd`. On Windows, it is a separate Node.js process launched at interactive logon by a user-level Task Scheduler task named `CodexSkinStudio`. Both use loopback CDP, watch for the selected renderer, and reapply the persisted theme after login, app launch, or renderer reload. They do not generate images or modify `app.asar`.
 
-Do not use ChatGPT Scheduled Tasks for local skin persistence. They do not provide a reliable local process or app lifecycle hook.
+Do not use ChatGPT Scheduled Tasks for local skin persistence. They are unrelated to the local OS worker and do not provide the required application lifecycle hook.
+
+### Windows
+
+Run the same Node.js commands from PowerShell or Command Prompt. The runtime
+looks for ChatGPT Desktop in standard `%LOCALAPPDATA%` and `%ProgramFiles%`
+locations, Microsoft Store package install directories, and then falls back to
+`where.exe`. On the first explicit apply, the
+restart worker launches the executable with loopback CDP arguments. To enable
+login and renderer-reload recovery explicitly:
+
+```powershell
+node "$env:USERPROFILE\\.codex\\skills\\codex-skin-studio\\scripts\\persist.mjs" install --json
+node "$env:USERPROFILE\\.codex\\skills\\codex-skin-studio\\scripts\\persist.mjs" status --json
+```
+
+This creates the user-level `CodexSkinStudio` Task Scheduler task. It does not
+require administrator privileges and does not modify the ChatGPT installation.
 
 ## Inspect And Restore
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, platform } from "node:os";
@@ -16,9 +16,12 @@ import {
   evaluateAll,
   injectTheme,
   injectionVerified,
+  isSupportedPlatform,
   isPidRunning,
+  launchApplication,
   listThemes,
   processIds,
+  quitApplication,
   readState,
   savedTheme,
   selectMainTarget,
@@ -32,9 +35,11 @@ const execFileAsync = promisify(execFile);
 const LABEL = "com.openai.chatgpt.codex-skin-studio";
 const PORT = 9341;
 const CONTROL_PORT = 9342;
-const BUNDLE_ID = "com.openai.codex";
 const PLIST_PATH = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const LOG_DIR = join(homedir(), "Library", "Logs", "CodexSkinStudio");
+const WINDOWS_ROOT = join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "CodexSkinStudio");
+const TASK_NAME = "CodexSkinStudio";
+const TASK_XML_PATH = join(WINDOWS_ROOT, "persistence-task.xml");
 
 function parseArgs(argv) {
   const command = argv.shift() || "status";
@@ -95,6 +100,53 @@ function launchctlTarget() {
   return `gui/${uid}`;
 }
 
+function windowsQuote(value) {
+  const text = String(value);
+  return /[\s"]/.test(text) ? `"${text.replaceAll('"', '\\"')}"` : text;
+}
+
+function buildTaskXml({ nodePath = process.execPath, scriptPath = fileURLToPath(import.meta.url), port = PORT, controlPort = CONTROL_PORT } = {}) {
+  const argumentsValue = [scriptPath, "persistence-worker", "--port", String(port), "--control-port", String(controlPort)].map(windowsQuote).join(" ");
+  return `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>Codex Skin Studio</Author>
+    <Description>Reapply the selected ChatGPT Desktop skin after Windows login, app launch, or renderer reload.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure>
+      <Interval>PT10S</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>${xml(nodePath)}</Command>
+      <Arguments>${xml(argumentsValue)}</Arguments>
+      <WorkingDirectory>${xml(dirname(scriptPath))}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+`;
+}
+
 async function launchctl(args, { ignoreFailure = false } = {}) {
   try {
     return await execFileAsync("/bin/launchctl", args, { timeout: 5000 });
@@ -104,8 +156,23 @@ async function launchctl(args, { ignoreFailure = false } = {}) {
   }
 }
 
+async function schtasks(args, { ignoreFailure = false } = {}) {
+  try {
+    return await execFileAsync("schtasks.exe", args, { timeout: 10000 });
+  } catch (error) {
+    if (ignoreFailure) return null;
+    throw error;
+  }
+}
+
 async function installPersistence({ port = PORT, controlPort = CONTROL_PORT, nodePath = process.execPath, scriptPath = fileURLToPath(import.meta.url) } = {}) {
-  if (platform() !== "darwin") throw new Error("ChatGPT Skin Studio persistence is macOS-only");
+  if (platform() === "win32") {
+    await mkdir(dirname(TASK_XML_PATH), { recursive: true });
+    await writeFile(TASK_XML_PATH, `\ufeff${buildTaskXml({ nodePath, scriptPath, port, controlPort })}`, "utf16le");
+    await schtasks(["/Create", "/TN", TASK_NAME, "/XML", TASK_XML_PATH, "/F"]);
+    return { status: "enabled", taskName: TASK_NAME, taskXmlPath: TASK_XML_PATH, port, controlPort };
+  }
+  if (platform() !== "darwin") throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
   await mkdir(dirname(PLIST_PATH), { recursive: true });
   await mkdir(LOG_DIR, { recursive: true });
   await writeFile(PLIST_PATH, buildPlist({ nodePath, scriptPath, port, controlPort }), "utf8");
@@ -116,13 +183,24 @@ async function installPersistence({ port = PORT, controlPort = CONTROL_PORT, nod
 }
 
 async function uninstallPersistence() {
-  if (platform() !== "darwin") throw new Error("ChatGPT Skin Studio persistence is macOS-only");
+  if (platform() === "win32") {
+    await schtasks(["/Delete", "/TN", TASK_NAME, "/F"], { ignoreFailure: true });
+    await rm(TASK_XML_PATH, { force: true });
+    return { status: "disabled", taskName: TASK_NAME, taskXmlPath: TASK_XML_PATH };
+  }
+  if (platform() !== "darwin") throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
   await launchctl(["bootout", launchctlTarget(), PLIST_PATH], { ignoreFailure: true });
   await rm(PLIST_PATH, { force: true });
   return { status: "disabled", label: LABEL, plistPath: PLIST_PATH };
 }
 
 async function persistenceStatus() {
+  if (platform() === "win32") {
+    const result = await schtasks(["/Query", "/TN", TASK_NAME, "/FO", "LIST", "/V"], { ignoreFailure: true });
+    const installed = Boolean(result);
+    const running = Boolean(result?.stdout && /Status:\s+Running/i.test(result.stdout));
+    return { status: running ? "enabled" : installed ? "installed" : "disabled", taskName: TASK_NAME, taskXmlPath: TASK_XML_PATH, loaded: installed, running };
+  }
   let installed = false;
   try {
     await readFile(PLIST_PATH, "utf8");
@@ -141,8 +219,7 @@ async function persistenceStatus() {
 }
 
 function launchDebug(app, port) {
-  const child = spawn("/usr/bin/open", ["-na", app, "--args", "--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${port}`], { detached: true, stdio: "ignore" });
-  child.unref();
+  return launchApplication(app, port);
 }
 
 function sendJson(response, statusCode, value) {
@@ -223,12 +300,12 @@ async function startControlServer({ port = CONTROL_PORT, cdpPort = PORT, createS
   return server;
 }
 
-async function quitChatGPT() {
-  await execFileAsync("/usr/bin/osascript", ["-e", `tell application id ${JSON.stringify(BUNDLE_ID)} to quit`], { timeout: 5000 });
+async function quitChatGPT(info, pids) {
+  return quitApplication(info, pids);
 }
 
 async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, pollMs = 1500, normalLaunchGraceMs = 5000, launchFn = launchDebug, quitFn = quitChatGPT, startControlServerFn = startControlServer } = {}) {
-  if (platform() !== "darwin") throw new Error("ChatGPT Skin Studio persistence is macOS-only");
+  if (!isSupportedPlatform(platform())) throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
   await startControlServerFn({ port: controlPort, cdpPort: port });
   let noCdpSince = 0;
   while (true) {
@@ -264,7 +341,7 @@ async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, poll
       } else if (!noCdpSince) {
         noCdpSince = Date.now();
       } else if (Date.now() - noCdpSince >= normalLaunchGraceMs) {
-        await quitFn();
+        await quitFn(info, pids);
         await waitForProcessExit(pids, { isPidRunning, timeoutMs: 10000, intervalMs: 250 });
         if (app) launchFn(app, port);
         noCdpSince = Date.now();
@@ -292,6 +369,6 @@ async function main() {
   }
 }
 
-export { buildPlist, createControlServer, installPersistence, LABEL, parseArgs, persistenceStatus, persistenceWorker, PLIST_PATH, startControlServer, uninstallPersistence };
+export { buildPlist, buildTaskXml, createControlServer, installPersistence, LABEL, parseArgs, persistenceStatus, persistenceWorker, PLIST_PATH, startControlServer, uninstallPersistence };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

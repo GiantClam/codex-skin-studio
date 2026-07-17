@@ -1,6 +1,6 @@
 ---
 name: codex-skin-studio
-description: Design, generate, validate, apply, inspect, or remove single-image skins for ChatGPT Desktop on macOS. Supports text-to-image generation, direct background images, subject-preserving image composition, style-reference generation, and multi-image composition. Use when the user asks to reskin ChatGPT Desktop, create a desktop theme or background, preserve a person, product, or object from an image, derive a skin from a style reference, apply a generated workspace, inspect the active skin, or restore the native interface.
+description: Design, generate, validate, apply, inspect, or remove single-image skins for ChatGPT Desktop on macOS or Windows. Supports text-to-image generation, direct background images, subject-preserving image composition, style-reference generation, and multi-image composition. Use when the user asks to reskin ChatGPT Desktop, create a desktop theme or background, preserve a person, product, or object from an image, derive a skin from a style reference, apply a generated workspace, inspect the active skin, or restore the native interface.
 ---
 
 # ChatGPT Desktop Skin Studio
@@ -17,7 +17,7 @@ automatic replacement for the user's active theme.
 
 - Keep the runtime theme hero-led. Optional presentation assets are limited to a brand logo and one portrait card; do not create component packs, websites, or another runtime.
 - Never modify `app.asar`, the application bundle, the code signature, or official JavaScript.
-- Target ChatGPT Desktop on macOS. Its current technical bundle identifier is `com.openai.codex`.
+- Target ChatGPT Desktop on macOS or Windows. macOS uses the technical bundle identifier `com.openai.codex`; Windows uses the ChatGPT executable discovered from standard install locations, `where.exe`, or the Microsoft Store package install directory through PowerShell.
 - Generate without restarting when the user asks only for a design. When the user explicitly asks to apply or replace a skin, complete application and enable persistence for the selected theme.
 - Use the built-in `$imagegen` skill by default. When a generated or edited image is required, invoke `$imagegen` before creating theme files or running `apply.mjs`; do not treat a prompt such as "use imagegen" as a completed generation step.
 - `$imagegen` must use the native `image_gen` tool by default. Do not replace it with a Node script, an HTTP request, an OpenAI API call, or the CLI fallback. If native generation is unavailable or returns an error, report the exact error and ask for a final local background image. Do not request an API key or switch to an external image service automatically.
@@ -80,7 +80,7 @@ node "$SKILL_ROOT/scripts/apply.mjs" doctor --json
   "$SKILL_ROOT/scripts/apply.mjs" doctor --json
 ```
 
-Use the second command only when the first cannot run.
+On Windows, use the same `node` command from PowerShell or Command Prompt. The runtime discovers ChatGPT Desktop from `%LOCALAPPDATA%\\Programs\\ChatGPT\\ChatGPT.exe`, other standard install locations, `where.exe`, or the Microsoft Store package install directory; it does not require a hard-coded user name or drive letter.
 
 ## Classify input images
 
@@ -233,13 +233,13 @@ Stable error codes are `THEME_INVALID`, `INVALID_PORT`, `APP_UNAVAILABLE`,
 `CDP_ERROR`, `INJECTION_FAILED`, `NO_ELIGIBLE_RENDERER`, `RESTORE_FAILED`,
 `RESTART_SCHEDULE_FAILED`, and `COMMAND_FAILED`.
 
-`apply` copies the validated theme into `~/Library/Application Support/CodexSkinStudio/themes/`
+`apply` copies the validated theme into macOS `~/Library/Application Support/CodexSkinStudio/themes/` or Windows `%APPDATA%\\CodexSkinStudio\\themes\\`
 and persists state. Without CDP it starts a detached restart worker and returns
 `scheduled` with `restartRequired: true`. A later `status` must confirm injection.
 
 ## Persist across ChatGPT Desktop restarts
 
-CDP-injected CSS lives in renderer memory and disappears when ChatGPT Desktop exits or reloads. Saving `theme.json` alone cannot make CSS persistent. The supported opt-in solution is a macOS LaunchAgent worker that keeps ChatGPT Desktop on loopback CDP and re-injects the persisted theme whenever a renderer returns:
+CDP-injected CSS lives in renderer memory and disappears when ChatGPT Desktop exits or reloads. Saving `theme.json` alone cannot make CSS persistent. The supported opt-in solution is a platform-native worker that keeps ChatGPT Desktop on loopback CDP and re-injects the persisted theme whenever a renderer returns:
 
 ```bash
 node "$SKILL_ROOT/scripts/persist.mjs" install --json
@@ -248,18 +248,18 @@ node "$SKILL_ROOT/scripts/persist.mjs" status --json
 
 Skill installation itself only copies files and cannot start a process. On the first explicit apply or replace request, check `persist.mjs status`; when it is `disabled`, run `persist.mjs install` automatically before reporting completion. This is the default persistence behavior for an applied skin, not a requirement for design-only work.
 
-Do not use a ChatGPT Scheduled Task for this job. Scheduled Tasks do not provide a reliable local macOS process, loopback CDP, or application-lifecycle hook. The LaunchAgent starts at the user login session, keeps the worker alive, launches ChatGPT Desktop with loopback CDP when a selected theme exists, and reapplies the theme after a renderer restart.
+On macOS, `persist.mjs install` creates a user-level LaunchAgent. On Windows, it creates a user-level Windows Task Scheduler task named `CodexSkinStudio`, triggered at interactive logon. Both workers are separate Node.js processes, use loopback CDP, launch ChatGPT Desktop with `--remote-debugging-address=127.0.0.1` and the selected port when needed, and reapply the theme after a renderer restart. Do not use a ChatGPT Scheduled Task for this job; it is unrelated to the local OS worker.
 
-The LaunchAgent may restart ChatGPT Desktop after a normal launch and may reopen it while persistence is enabled. It never modifies `app.asar` or the code signature. Remove it with:
+The persistence worker may restart ChatGPT Desktop after a normal launch and may reopen it while persistence is enabled. It never modifies `app.asar`, the application signature, or the Windows installation. Remove the platform-native worker with:
 
 ```bash
 node "$SKILL_ROOT/scripts/persist.mjs" uninstall --json
 ```
 
-The worker uses the active theme state under `~/Library/Application Support/CodexSkinStudio/state.json`; it does not generate images or create new themes. The apply workflow is:
+The worker uses the active theme state under macOS `~/Library/Application Support/CodexSkinStudio/state.json` or Windows `%APPDATA%\\CodexSkinStudio\\state.json`; it does not generate images or create new themes. The apply workflow is:
 
 1. Generate and validate the complete theme.
-2. Install the LaunchAgent when persistence status is `disabled`.
+2. Install the platform-native persistence worker when persistence status is `disabled`.
 3. Apply the selected theme.
 4. Poll `apply.mjs status` until it reports `active`.
 

@@ -95,6 +95,22 @@ node "$SKILL_ROOT/scripts/apply.mjs" doctor --json
 
 On Windows, use the same `node` command from PowerShell or Command Prompt. The runtime discovers ChatGPT Desktop from `%LOCALAPPDATA%\\Programs\\ChatGPT\\ChatGPT.exe`, other standard install locations, `where.exe`, or the Microsoft Store package install directory; it does not require a hard-coded user name or drive letter.
 
+For Windows apply or update operations, use the external runner from a separate
+PowerShell process. It keeps the restart and CDP handshake outside the Codex
+renderer that is being restarted:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  "$env:USERPROFILE\\.codex\\skills\\codex-skin-studio\\scripts\\windows\\apply.ps1" `
+  -ThemeDir "C:\\absolute\\path\\to\\theme" -Persist
+```
+
+The runner validates the theme, reuses an existing loopback CDP session when
+available, otherwise closes the visible Codex app, starts the MSIX app through
+its AUMID, waits for port `9341`, and then runs `apply.mjs apply`. Its final
+result must be `{"status":"applied"}`. If the Codex app does not preserve the
+debugging arguments, the runner stops with a diagnostic instead of retrying.
+
 ## Classify input images
 
 1. Inspect every local image with `view_image` before editing or composing it.
@@ -204,6 +220,11 @@ node "$SKILL_ROOT/scripts/create-theme.mjs" \
 8. Keep every final asset as a non-empty local WebP file inside the theme directory. `create-theme.mjs` automatically converts the final Hero, logo, and portrait assets to WebP and updates the manifest; do not manually copy large PNG/JPEG files into the output. Do not add CSS, JavaScript, remote URLs, source copies, transparent intermediates, or reference images.
 9. Immediately run `validate` against the directory. Treat the returned JSON as the creation result and report the exact theme directory and files.
 10. If application was explicitly requested, use the same creator with `--apply` (and `--port` only when needed), or run `apply.mjs apply` immediately after creation. Poll `apply.mjs status` after a `scheduled` result until it is `active`, with a bounded wait. Never call a `scheduled` or `pending` result active.
+
+On Windows, create the theme without `--apply`, then run
+`scripts/windows/apply.ps1 -ThemeDir <theme-dir> -Persist` from an external
+PowerShell process. Do not restart the Codex renderer from the current Agent
+process.
 
 For a single command after the final hero is ready:
 
@@ -430,6 +451,10 @@ Stable error codes are `THEME_INVALID`, `INVALID_PORT`, `APP_UNAVAILABLE`,
 `apply` copies the validated theme into macOS `~/Library/Application Support/CodexSkinStudio/themes/` or Windows `%APPDATA%\\CodexSkinStudio\\themes\\`
 and persists state. Without CDP it starts a detached restart worker and returns
 `scheduled` with `restartRequired: true`. A later `status` must confirm injection.
+
+For Windows, the external runner is the supported one-shot apply path because
+the current Codex renderer may be the process being restarted. It avoids
+reporting success from a detached schedule alone.
 
 ## Persist across ChatGPT Desktop restarts
 

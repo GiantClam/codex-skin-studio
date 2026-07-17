@@ -31,18 +31,20 @@ The corresponding source files are inside the installed application at:
 ## Platform boundary
 
 The contract is format-level evidence from the official bundled Skill. It is
-expected to be shared by the macOS and Windows ChatGPT Desktop distributions,
-but this machine has not executed a Windows Desktop Refresh. Windows path and
+expected to be shared by the macOS and Windows ChatGPT Desktop distributions.
+The macOS build was inspected and its visible Settings > Pets Refresh,
+selected-row, and Pet Overlay postconditions were verified. Windows path and
 installation behavior is covered by automated tests; Windows application
-selection remains pending manual verification.
+selection still requires a Windows Desktop manual run.
 
-## Application behavior still requiring E2E evidence
+## Application behavior and runtime postconditions
 
-The public product flow is Settings > Pets > Refresh, choose the new Pet, then
-use `/pet`. No stable programmatic Desktop selector is published. The local
-Pet tool therefore reports `refresh-required` after installation and does not
-claim that the Pet is selected or running until a real application postcondition
-is observed.
+The supported selection flow is Settings > Pets > Refresh, then choose the
+matching custom Pet. The versioned adapter verifies the visible selected row.
+The runtime postcondition is a visible Pet Overlay with the matching avatar
+asset and animation state. The inspected Desktop build returned
+"/pet isn't a recognized command here", so `/pet` is not a valid wake-up
+requirement for that build and must not be treated as evidence of success.
 
 ## Public Web baseline
 

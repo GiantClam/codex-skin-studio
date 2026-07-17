@@ -111,7 +111,7 @@ export async function switchPairBundle(directory, { contract, petsDir = defaultP
   await writeFile(join(stateRoot, "paired-state.json"), `${json(pairedState)}\n`);
   const selected = petSelection.selection === "native-ui-confirmed";
   const themeStatus = themeApplication.status === "applied" ? "theme-applied" : "theme-scheduled";
-  return { status: `${themeStatus}-pet-${selected ? "selected" : "refresh-required"}`, bundle: bundle.id, theme: themeApplication, pet: petInstall, petSelection, nextAction: selected ? "Invoke /pet in ChatGPT Desktop to confirm the matching Pet overlay." : "Open ChatGPT Desktop Settings > Pets > Refresh, choose the installed matching Pet, then use /pet.", pairedState };
+  return { status: `${themeStatus}-pet-${selected ? "selected" : "refresh-required"}`, bundle: bundle.id, theme: themeApplication, pet: petInstall, petSelection, nextAction: selected ? "Confirm the matching ChatGPT Desktop Pet overlay is visible and animating." : "Open ChatGPT Desktop Settings > Pets > Refresh, choose the installed matching Pet, then confirm its overlay.", pairedState };
 }
 
 export async function pairedStatus({ petsDir = defaultPetsDir(), port = 9341 } = {}) {

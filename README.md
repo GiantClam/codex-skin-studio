@@ -26,7 +26,7 @@ The current application is ChatGPT Desktop. macOS identifies it with bundle iden
 - Oversized raster Heroes are decoded and compressed to a smaller WebP data URL before CSS injection, avoiding stylesheet limits that can silently drop the background rule.
 - Theme creation also converts the final Hero, logo, and portrait assets to `.webp` on disk and updates `theme.json` automatically.
 - Contract-driven Pet generation: cartoonized, anthropomorphic, large-head/small-body companions assembled into validated Codex V2 8x11 RGBA PNG/WebP atlases with 16 look directions.
-- Paired theme + Pet bundles with atomic Pet installation, local status reporting, and one switch command that applies the theme and reports the required Pets Refresh step.
+- Paired theme + Pet bundles with atomic Pet installation, local status reporting, and one switch command that applies the theme and attempts native Pets Refresh and selection.
 - No `app.asar` modification, code-signature changes, database, website, remote service, or arbitrary theme CSS.
 - English-only Skill distribution files; the Skill can respond to users in their language.
 
@@ -87,6 +87,7 @@ skill/codex-skin-studio/
 │   ├── paired-status.mjs
 │   ├── paired.mjs
 │   ├── pet.mjs
+│   ├── pet-desktop.mjs
 │   └── persist.mjs
 ├── templates/
 │   ├── pet-contract.json
@@ -103,7 +104,8 @@ scripts/
 └── package-codex-skin-studio.command
 
 test/
-└── codex-skin-studio-mvp.test.mjs
+├── codex-skin-studio-mvp.test.mjs
+└── windows-pet-contract.test.mjs
 
 output/
 └── codex-skin-studio.skill
@@ -189,10 +191,12 @@ Create a matching ChatGPT Desktop theme and a cute anthropomorphic large-head/sm
 
 The Skill generates the hero and Pet action frames separately, validates both,
 creates a paired bundle, installs the Pet atomically, and applies the theme.
-Because ChatGPT Desktop currently exposes Pet Refresh and selection through its
-own Settings UI rather than a stable public selector API, the command reports
-`theme-applied-pet-refresh-required` until the user chooses the matching Pet in
-Settings > Pets > Refresh and invokes `/pet`.
+The switch command then uses the versioned visible Settings > Pets adapter. A
+successful native result is `theme-applied-pet-selected`; if the UI cannot be
+automated it truthfully falls back to `theme-applied-pet-refresh-required`.
+Confirm the matching Pet Overlay after selection. The inspected Desktop build
+does not recognize `/pet`, so an unrecognized `/pet` response is not treated as
+a wake-up success.
 
 ## Five-Zone Visual Contract
 
@@ -341,6 +345,7 @@ This is a regression. The brand selector must be scoped to the top navigation mo
 ```bash
 npm test
 npm run test:codex-skin-studio
+npm run test:windows
 npm run package:codex-skin-studio
 ```
 

@@ -274,7 +274,9 @@ contract marked provisional may be used only with `--allow-provisional`.
 Before implementing or shipping a new contract, record the ChatGPT Desktop
 version and platform, hatch-pet version or generation date, manifest fields,
 spritesheet format, column count, row count, frame dimensions, row semantics,
-and Settings > Pets > Refresh and `/pet` results.
+and Settings > Pets > Refresh, selected-row, and Pet Overlay results. Treat
+`/pet` as optional and build-specific; an unrecognized command is a failed
+probe, not evidence that the Pet woke up.
 
 Never infer an animation row mapping from a community example. If the observed
 contract changes, stop with `PET_CONTRACT_MISMATCH` and update the versioned
@@ -385,8 +387,10 @@ theme application.
 When native selection is unavailable, the command reports
 `theme-applied-pet-refresh-required` or
 `theme-scheduled-pet-refresh-required`. The user must then use ChatGPT Desktop
-Settings > Pets > Refresh, choose the matching Pet, and invoke `/pet`. Inspect
-the combined state with:
+Settings > Pets > Refresh, choose the matching Pet, and confirm that its
+native Pet Overlay is visible. Some Desktop builds do not recognize `/pet` as
+a command; never treat an unrecognized `/pet` response as a successful wake-up.
+Inspect the combined state with:
 
 ```bash
 node "$SKILL_ROOT/scripts/paired-status.mjs" --json
@@ -395,8 +399,9 @@ node "$SKILL_ROOT/scripts/paired-status.mjs" --json
 Use `--manual-pet` to skip native Pet selection and deliberately require the
 manual Refresh flow. The adapter is best-effort and versioned because ChatGPT
 Desktop does not expose a public third-party Pet selection API. Require a real
-visible selected-row postcondition before reporting native selection; never
-report a paired success from local file installation alone.
+visible selected-row postcondition before reporting native selection, and use
+a visible matching Pet Overlay as the runtime postcondition; never report a
+paired success from local file installation alone.
 
 ## Validate
 

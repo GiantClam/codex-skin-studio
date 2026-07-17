@@ -23,8 +23,10 @@
     "180", "202.5", "225", "247.5", "270", "292.5", "315", "337.5"
   ],
   "neutralLookFrame": { "row": 0, "column": 6 },
-  "desktopRefreshE2E": "pending",
+  "desktopRefreshE2E": "macos-refresh-selection-overlay-verified",
   "windowsManualE2E": "pending",
+  "petCommandProbe": "current-build-rejected-/pet-as-unrecognized-command",
+  "nativeAdapterVersion": "chatgpt-desktop-pets-settings-v1",
   "webUploadBaseline": {
     "width": 1536,
     "height": 1872,

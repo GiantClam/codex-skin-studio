@@ -121,7 +121,7 @@ export function buildMacOpenSettingsScript({ appName = "ChatGPT" } = {}) {
 }
 
 export function buildWindowsOpenSettingsScript() {
-  return "$shell = New-Object -ComObject WScript.Shell; if (-not $shell.AppActivate('ChatGPT')) { throw 'ChatGPT Desktop window was not found' }; Start-Sleep -Milliseconds 200; $shell.SendKeys('^,')";
+  return "$shell = New-Object -ComObject WScript.Shell; $activated = $shell.AppActivate('ChatGPT') -or $shell.AppActivate('Codex'); if (-not $activated) { throw 'ChatGPT Desktop window was not found' }; Start-Sleep -Milliseconds 200; $shell.SendKeys('^,')";
 }
 
 export async function openChatGptSettings({ platformName = platform(), execFileFn = execFileAsync } = {}) {

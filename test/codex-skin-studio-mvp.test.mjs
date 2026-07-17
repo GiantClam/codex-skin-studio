@@ -1370,6 +1370,7 @@ test("creates and validates a paired theme and Pet bundle", { skip: !sharp && "s
 test("uses visible ChatGPT Desktop Pets controls instead of private app state", () => {
   assert.match(buildMacOpenSettingsScript(), /Settings/);
   assert.match(buildWindowsOpenSettingsScript(), /SendKeys\('\^,'\)/);
+  assert.match(buildWindowsOpenSettingsScript(), /AppActivate\('Codex'\)/);
   assert.match(OPEN_PETS_PANEL_EXPRESSION, /data-settings-panel-slug=\\?\"pets/);
   assert.match(OPEN_PETS_PANEL_EXPRESSION, /data-settings-panel-slug=\\?\"appearance/);
   assert.match(REFRESH_PETS_EXPRESSION, /button,\[role=\\?\"button/);

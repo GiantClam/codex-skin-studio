@@ -980,6 +980,7 @@ function switcherExpression(themes = []) {
       if (!body) return;
       let shell = document.getElementById(${switcherId});
       shell?.__codexSkinNativeOverlayObserver?.disconnect();
+      if (shell?.__codexSkinThemeRefreshTimer) clearInterval(shell.__codexSkinThemeRefreshTimer);
       shell?.remove();
       shell = null;
       if (!shell) {
@@ -994,7 +995,8 @@ function switcherExpression(themes = []) {
       const list = shell.querySelector("[data-switcher-list]");
       const status = shell.querySelector("#${SWITCHER_ID}-status");
       const styleNode = () => document.getElementById(${styleId});
-      const localThemes = ${localThemes};
+      let localThemes = ${localThemes};
+      const themesUrl = ${JSON.stringify(`http://127.0.0.1:${SWITCHER_PORT}/themes`)};
       const positionKey = "codex-skin-studio-switcher-position";
       const setPosition = (left, top, save = true) => {
         const width = shell.offsetWidth || 104;
@@ -1031,7 +1033,7 @@ function switcherExpression(themes = []) {
         try { button.releasePointerCapture?.(event.pointerId); } catch {}
         drag = null;
       };
-      const renderThemes = () => {
+      const renderThemes = (statusText = null) => {
         if (!list || !status) return;
         list.replaceChildren();
         const activeId = styleNode()?.dataset.themeId || null;
@@ -1058,7 +1060,24 @@ function switcherExpression(themes = []) {
           });
           list.appendChild(item);
         }
-        status.textContent = localThemes.length ? "Local themes" : "No local themes yet";
+        status.textContent = statusText || (localThemes.length ? "Local themes" : "No local themes yet");
+      };
+      const refreshThemes = async () => {
+        try {
+          const response = await fetch(themesUrl, { cache: "no-store" });
+          if (!response.ok) throw new Error("theme list request failed");
+          const payload = await response.json();
+          if (!Array.isArray(payload)) throw new Error("theme list response was malformed");
+          localThemes = payload.filter((theme) => theme && typeof theme.id === "string" && typeof theme.name === "string").map(({ id, name }) => ({ id, name }));
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const refreshAndRender = async () => {
+        const refreshed = await refreshThemes();
+        renderThemes(refreshed ? null : (localThemes.length ? "Local themes (cached)" : "Themes unavailable"));
+        return refreshed;
       };
       if (button && menu && !shell.dataset.bound) {
         button.addEventListener("pointerdown", (event) => {
@@ -1089,7 +1108,10 @@ function switcherExpression(themes = []) {
           }
           menu.hidden = !menu.hidden;
           button.setAttribute("aria-expanded", String(!menu.hidden));
-          if (!menu.hidden) renderThemes();
+          if (!menu.hidden) {
+            status.textContent = "Refreshing local skins...";
+            refreshAndRender();
+          }
         });
         addEventListener("resize", () => {
           if (shell.dataset.positioned === "true") setPosition(parseFloat(shell.style.left), parseFloat(shell.style.top));
@@ -1111,6 +1133,9 @@ function switcherExpression(themes = []) {
       const observer = new MutationObserver(syncNativeOverlay);
       observer.observe(body, { subtree: true, attributes: true, attributeFilter: ["aria-expanded", "data-state", "hidden", "style", "class"] });
       shell.__codexSkinNativeOverlayObserver = observer;
+      shell.__codexSkinThemeRefreshTimer = setInterval(async () => {
+        if (await refreshThemes() && !menu.hidden) renderThemes();
+      }, 3000);
       syncNativeOverlay();
       renderThemes();
     } catch {

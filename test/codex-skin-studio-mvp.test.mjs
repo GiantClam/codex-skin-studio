@@ -133,6 +133,7 @@ test("emits the local skin switcher button and control routes", () => {
   assert.match(value, /pointer-events: none/);
   assert.match(expression, /codex-skin-studio-switcher/);
   assert.match(expression, /127\.0\.0\.1:9342\/apply/);
+  assert.match(expression, /127\.0\.0\.1:9342\/themes/);
   assert.match(expression, /Miku/);
   assert.match(expression, /window\.open/);
   assert.match(expression, /Switch ChatGPT Desktop skin/);
@@ -143,6 +144,11 @@ test("emits the local skin switcher button and control routes", () => {
   assert.match(expression, /pointerdown/);
   assert.match(expression, /pointermove/);
   assert.match(expression, /suppressClick/);
+  assert.match(expression, /refreshThemes/);
+  assert.match(expression, /cache: "no-store"/);
+  assert.match(expression, /setInterval/);
+  assert.match(expression, /clearInterval/);
+  assert.match(expression, /Local themes \(cached\)/);
 });
 
 test("parses the local switcher control port and exposes a loopback control server", async (t) => {

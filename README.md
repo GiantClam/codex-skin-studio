@@ -20,6 +20,7 @@ The current application is ChatGPT Desktop. macOS identifies it with bundle iden
 - Local-only CDP communication on `127.0.0.1`.
 - Optional macOS LaunchAgent or Windows Task Scheduler persistence for login, app launch, and renderer reload recovery.
 - Upper-right `Skins` switcher for selecting any valid locally generated theme without leaving the conversation.
+- The `Skins` menu refreshes valid local themes on open and in the background, so newly created themes appear without restarting ChatGPT Desktop.
 - No `app.asar` modification, code-signature changes, database, website, remote service, or arbitrary theme CSS.
 - English-only Skill distribution files; the Skill can respond to users in their language.
 
@@ -54,6 +55,10 @@ When persistence is enabled, the worker also exposes a loopback-only control end
 The switcher observes native ChatGPT Desktop menu and popover state. It temporarily hides and disables its own hit area while a native menu such as a file open-method menu is expanded, then restores itself when the native menu closes.
 
 The switcher can be dragged within the conversation viewport. A normal click opens the local theme menu; a drag moves the control and persists its bounded position in Renderer-local storage.
+
+The switcher reads the current theme list from the loopback `/themes` endpoint
+when opened and periodically while mounted. If the persistence worker is
+temporarily unavailable, it keeps the last injected list as a fallback.
 
 ## Repository Layout
 

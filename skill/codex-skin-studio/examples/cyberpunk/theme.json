@@ -4,7 +4,10 @@
   "name": "Cyberpunk Night",
   "hero": "hero.png",
   "copy": {
-    "brand": "CYBERPUNK // NIGHT"
+    "brand": "CYBERPUNK NIGHT",
+    "brandStyle": {
+      "preset": "cyberpunk"
+    }
   },
   "colors": {
     "accent": "#25D9FF",

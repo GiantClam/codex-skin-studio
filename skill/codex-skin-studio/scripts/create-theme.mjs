@@ -48,7 +48,7 @@ function optionalCopy(values, defaultBrand = null) {
   const copy = {};
   const brand = values.get("brand");
   if (brand !== undefined) copy.brand = String(brand).trim();
-  else if (defaultBrand) copy.brand = defaultBrand;
+  else if (defaultBrand) copy.brand = defaultBrand.replace(/\s*\/\/\s*/g, " ").trim();
   for (const key of ["brand", "headline", "tagline"]) {
     const value = values.get(key);
     if (key !== "brand" && value !== undefined) copy[key] = String(value).trim();

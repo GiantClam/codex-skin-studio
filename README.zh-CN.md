@@ -179,7 +179,7 @@ node "$HOME/.codex/skills/codex-skin-studio/scripts/create-theme.mjs" \
   --secondary "#806CFF" \
   --surface "#090D2A" \
   --text "#FFFFFF" \
-  --brand "SLAYERS // XELLOS" \
+  --brand "SLAYERS XELLOS" \
   --replace \
   --apply
 ```
@@ -208,7 +208,7 @@ node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" install --json
   "logo": "logo.png",
   "polaroid": "polaroid.png",
   "copy": {
-    "brand": "SLAYERS // XELLOS",
+    "brand": "SLAYERS XELLOS",
     "headline": "The Black Cloak of Xellos",
     "tagline": "Arcane ruins. Violet stars. Quiet mischief."
   },

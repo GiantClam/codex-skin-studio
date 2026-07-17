@@ -317,6 +317,20 @@ test("defaults the generated brand label to the theme name without a logo", asyn
   });
 });
 
+test("removes synthetic slash separators from an inferred brand label", async () => {
+  await withTempDir("codex-skin-brand-clean-", async (root) => {
+    const themeDir = join(root, "theme");
+    const hero = join(root, "source.webp");
+    await writeFile(hero, await readFile(join(skillRoot, "examples/slayers-xellos-night/hero.webp")));
+    const { stdout } = await execFileAsync(process.execPath, [createThemeScript,
+      "--id", "clean-brand", "--name", "PATRIOT // GOLD", "--out", themeDir,
+      "--hero", hero,
+      "--accent", "#D9A441", "--secondary", "#B5312B", "--surface", "#050D20", "--text", "#FFFFFF",
+    ]);
+    assert.equal(JSON.parse(stdout).manifest.copy.brand, "PATRIOT GOLD");
+  });
+});
+
 test("builds an opt-in launch agent that keeps the renderer debuggable", () => {
   const plist = buildPlist({ nodePath: "/usr/local/bin/node", scriptPath: "/tmp/apply.mjs", port: 9341 });
   assert.match(plist, /com\.openai\.chatgpt\.codex-skin-studio/);

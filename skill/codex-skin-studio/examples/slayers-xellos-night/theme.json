@@ -4,7 +4,10 @@
   "name": "Slayers Xellos Night",
   "hero": "hero.webp",
   "copy": {
-    "brand": "SLAYERS // XELLOS"
+    "brand": "SLAYERS XELLOS",
+    "brandStyle": {
+      "preset": "mystic"
+    }
   },
   "colors": {
     "accent": "#D76CFF",

@@ -133,7 +133,7 @@ try {
         $target = Get-LaunchTarget
         Close-Codex
         if ($target -like "aumid:*") {
-            $pid = Start-StoreCodex -Aumid $target.Substring(6)
+            $processId = Start-StoreCodex -Aumid $target.Substring(6)
         } else {
             Start-Process -FilePath $target -ArgumentList @(
                 "--remote-debugging-address=127.0.0.1",

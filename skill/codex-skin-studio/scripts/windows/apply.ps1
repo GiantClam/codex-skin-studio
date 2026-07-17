@@ -62,6 +62,23 @@ function Test-Cdp {
     }
 }
 
+function Get-CdpTargetSummary {
+    try {
+        $targets = @(Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -TimeoutSec 2)
+        $summary = foreach ($target in $targets) {
+            [ordered]@{
+                type = $target.type
+                title = $target.title
+                url = $target.url
+                hasWebSocket = [bool]$target.webSocketDebuggerUrl
+            }
+        }
+        return ($summary | ConvertTo-Json -Depth 4 -Compress)
+    } catch {
+        return "unavailable: $($_.Exception.Message)"
+    }
+}
+
 function Get-StorePackage {
     Get-AppxPackage -ErrorAction SilentlyContinue |
         Where-Object { -not $_.IsFramework -and ($_.Name -match "^OpenAI\." -or $_.Name -match "ChatGPT|Codex") } |
@@ -217,6 +234,6 @@ try {
     $result = Invoke-Node @($applyScript, "apply", $ThemeDir, "--port", "$Port", "--json")
     Write-Output $result
 } catch {
-    Write-Error ($_.Exception.ToString())
+    Write-Error ($_.Exception.ToString() + "`nCDP target summary:`n" + (Get-CdpTargetSummary))
     exit 1
 }

@@ -402,11 +402,13 @@ native-ui-confirmed`. The adapter uses stable visible attributes and visible
 button labels only; it does not use private React state, private storage, or
 arbitrary screen coordinates. On macOS it opens Settings through AppleScript.
 On Windows it uses the standard ChatGPT Settings shortcut through PowerShell;
-accessibility or keyboard automation failures fall back without undoing the
-theme application. The adapter also recognizes visible settings links and
-semantic controls through `aria-label`, `title`, `data-testid`, and settings
-URLs, then recognizes visible Pets/Appearance panels and custom Pet cards. It
-never reads private app state. If the current Windows session is unauthenticated
+if a build exposes Settings only from a visible account or profile menu, it
+opens that menu and then the visible Settings item. Accessibility or keyboard
+automation failures fall back without undoing the theme application. The
+adapter also recognizes visible settings links and semantic controls through
+`aria-label`, `title`, `data-testid`, and settings URLs, then recognizes visible
+Pets/Appearance panels and custom Pet cards. It never reads private app state.
+If the current Windows session is unauthenticated
 or does not expose a visible Settings control, return the adapter error and keep
 the result at `theme-applied-pet-refresh-required`; do not report native Pet
 selection from local installation alone.

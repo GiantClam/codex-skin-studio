@@ -387,6 +387,8 @@ npm run package:codex-skin-studio
 仓库还提供手动触发的 Windows Desktop E2E workflow：安装官方 Microsoft
 Store 版本、启动 loopback CDP、安装示例 Pet，并尝试通过可见的 Settings >
 Pets 执行 Refresh 和选择：[Windows Desktop E2E workflow](.github/workflows/windows-desktop-e2e.yml)。
+原生适配器会先使用 Settings 快捷键；如果当前版本把 Settings 放在可见的账户或
+个人资料菜单中，会继续打开该菜单再选择可见的 Settings。
 当前 Windows Renderer 的主题注入已经验证；原生 Pet 选择需要已登录且能显示
 Settings 的交互式 Desktop，会在干净 Runner 中保留明确失败，不会把本地文件安装
 误报为已选择 Pet。

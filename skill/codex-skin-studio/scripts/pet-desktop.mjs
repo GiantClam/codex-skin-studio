@@ -78,6 +78,21 @@ export const OPEN_SETTINGS_EXPRESSION = `(() => {
   return { ok: true };
 })()`;
 
+export const OPEN_ACCOUNT_MENU_EXPRESSION = `(() => {
+  const visible = (node) => { const rect = node.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; };
+  const candidates = [...document.querySelectorAll('button,[role="button"],a')].filter(visible);
+  const button = candidates.find((candidate) => {
+    const value = ((candidate.getAttribute('aria-label') || '') + ' ' + (candidate.getAttribute('title') || '') + ' ' + (candidate.textContent || '')).replace(/\\s+/g, ' ').trim().toLowerCase();
+    const testId = (candidate.getAttribute('data-testid') || '').toLowerCase();
+    const hasMenu = candidate.getAttribute('aria-haspopup') === 'menu';
+    const hasAvatar = Boolean(candidate.querySelector('img,[data-avatar],[data-user-avatar]'));
+    return /account|profile|user menu|avatar|personal settings|\u8d26\u6237|\u7528\u6237|\u5934\u50cf/.test(value) || /account|profile|user|avatar/.test(testId) || (hasMenu && hasAvatar);
+  });
+  if (!button) return { ok: false, reason: "account-menu-not-found", candidates: candidates.slice(0, 40).map((candidate) => ({ tag: candidate.tagName.toLowerCase(), label: ((candidate.getAttribute('aria-label') || '') + ' ' + (candidate.getAttribute('title') || '') + ' ' + (candidate.textContent || '')).replace(/\\s+/g, ' ').trim().slice(0, 120), testId: candidate.getAttribute('data-testid'), href: candidate.getAttribute('href') })) };
+  button.click();
+  return { ok: true };
+})()`;
+
 export const REFRESH_PETS_EXPRESSION = `(() => {
   const labels = ${json([...REFRESH_LABELS])};
   const button = [...document.querySelectorAll('button,[role="button"]')].find((candidate) => {
@@ -201,8 +216,25 @@ async function waitForState(port, predicate, options = {}) {
 async function openSettingsThroughVisibleControl(port) {
   const target = await currentTarget(port);
   const opened = await evaluateTarget(target, OPEN_SETTINGS_EXPRESSION);
-  if (!opened?.ok) throw petError("PET_NATIVE_UI_UNAVAILABLE", opened?.reason || "could not open ChatGPT Desktop Settings through visible UI", { candidates: opened?.candidates || [] });
-  return opened;
+  if (opened?.ok) return opened;
+
+  const account = await evaluateTarget(target, OPEN_ACCOUNT_MENU_EXPRESSION);
+  if (!account?.ok) {
+    throw petError("PET_NATIVE_UI_UNAVAILABLE", opened?.reason || "could not open ChatGPT Desktop Settings through visible UI", {
+      candidates: opened?.candidates || [],
+      accountCandidates: account?.candidates || [],
+    });
+  }
+
+  await delay(UI_POLL_MS);
+  const nested = await evaluateTarget(target, OPEN_SETTINGS_EXPRESSION);
+  if (!nested?.ok) {
+    throw petError("PET_NATIVE_UI_UNAVAILABLE", nested?.reason || "could not open ChatGPT Desktop Settings from the account menu", {
+      candidates: nested?.candidates || [],
+      accountMenuOpened: true,
+    });
+  }
+  return { ...nested, via: "account-menu" };
 }
 
 export async function selectPetInChatGptDesktop({ petId, port = DEFAULT_PORT, openSettingsFn = openChatGptSettings, restoreApp = true } = {}) {

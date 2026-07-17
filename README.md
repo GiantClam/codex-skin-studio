@@ -56,6 +56,10 @@ The switcher can be dragged within the conversation viewport. A normal click ope
 ## Repository Layout
 
 ```text
+docs/
+├── codex-desktop-skin-skill-mvp-plan.md
+└── superpowers/specs/
+
 skill/codex-skin-studio/
 ├── SKILL.md
 ├── agents/openai.yaml
@@ -66,12 +70,20 @@ skill/codex-skin-studio/
 ├── templates/theme.json
 └── examples/cyberpunk/
 
-themes/
-└── slayers-xellos-night/
+scripts/
+└── package-codex-skin-studio.command
+
+test/
+└── codex-skin-studio-mvp.test.mjs
 
 output/
 └── codex-skin-studio.skill
 ```
+
+Generated themes are user data, stored under
+`~/Library/Application Support/CodexSkinStudio/themes/`; they are not bundled
+in this repository. This keeps the repository independent of any character,
+brand, or preset artwork.
 
 ## Install The Skill
 
@@ -154,7 +166,7 @@ After the final hero has been generated and inspected, the Skill can create and 
 node "$HOME/.codex/skills/codex-skin-studio/scripts/create-theme.mjs" \
   --id "slayers-xellos-night" \
   --name "Slayers Xellos Night" \
-  --out "/absolute/path/to/themes/slayers-xellos-night" \
+  --out "$HOME/Library/Application Support/CodexSkinStudio/themes/slayers-xellos-night" \
   --hero "/absolute/path/to/final-hero.webp" \
   --accent "#D76CFF" \
   --secondary "#806CFF" \

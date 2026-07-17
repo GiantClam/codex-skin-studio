@@ -1,18 +1,11 @@
 {
-  "name": "heige-codex-skin-studio",
+  "name": "codex-skin-studio",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "heige-codex-skin": "src/cli.mjs"
-  },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/codex-skin-studio-mvp.test.mjs",
     "test:codex-skin-studio": "node --test test/codex-skin-studio-mvp.test.mjs",
-    "package:codex-skin-studio": "scripts/package-codex-skin-studio.command",
-    "doctor": "node src/cli.mjs doctor",
-    "status": "node src/cli.mjs status",
-    "list": "node src/cli.mjs list",
-    "apply": "node src/cli.mjs apply"
+    "package:codex-skin-studio": "scripts/package-codex-skin-studio.command"
   }
 }

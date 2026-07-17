@@ -141,8 +141,7 @@ export const RETURN_TO_APP_EXPRESSION = `(() => {
 
 export function buildMacOpenSettingsScript({ appName = "ChatGPT" } = {}) {
   const escaped = String(appName).replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
-  const settingsLabel = String.fromCodePoint(0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x2026);
-  return `tell application "${escaped}" to activate\ndelay 0.2\ntell application "System Events"\n  tell process "${escaped}"\n    click menu item "${settingsLabel}" of menu 1 of menu bar item "${escaped}" of menu bar 1\n  end tell\nend tell`;
+  return `tell application "${escaped}" to activate\ndelay 0.2\ntell application "System Events"\n  tell process "${escaped}"\n    keystroke "," using {command down}\n  end tell\nend tell`;
 }
 
 export function buildWindowsOpenSettingsScript() {
@@ -221,7 +220,7 @@ export async function selectPetInChatGptDesktop({ petId, port = DEFAULT_PORT, op
         await openSettingsThroughVisibleControl(port);
         state = (await waitForState(port, (value) => value.settings)).value;
       } catch (visibleError) {
-        if (nativeOpenError) throw commandFailure(nativeOpenError);
+        if (nativeOpenError) throw commandFailure(visibleError, "PET_NATIVE_UI_UNAVAILABLE");
         throw visibleError;
       }
     }

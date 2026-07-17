@@ -263,6 +263,13 @@ the official `hatch-pet` Skill and ChatGPT Desktop. The repository template at
 installation. The scripts reject provisional contracts unless the explicit
 `--allow-provisional` flag is used for local tests only.
 
+The public Web Pet baseline is transparent PNG or WebP at exactly 1536x1872
+pixels and no larger than 20 MiB. The default provisional contract matches this
+baseline with an 8x9 atlas of 192x208 frames, but the Web baseline is not proof
+of a frozen ChatGPT Desktop `hatch-pet` manifest or row mapping. Desktop
+selection remains `Settings > Pets > Refresh`, choose the matching Pet, then
+`/pet` until a supported native selector and a real postcondition are observed.
+
 Before implementing or shipping a new contract, record the ChatGPT Desktop
 version and platform, hatch-pet version or generation date, manifest fields,
 spritesheet format, column count, row count, frame dimensions, row semantics,

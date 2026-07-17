@@ -15,7 +15,7 @@ const sharp = require("sharp");
 import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
 import { buildPlist, buildTaskXml, createControlServer, parseArgs as parsePersistArgs } from "../skill/codex-skin-studio/scripts/persist.mjs";
-import { createPet, defaultPetsDir, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
+import { createPet, defaultPetsDir, DEFAULT_PET_CONTRACT, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
 import { createPairBundle, validatePairBundle } from "../skill/codex-skin-studio/scripts/paired.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -1307,6 +1307,12 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", asyn
     assert.equal(status.active, "test-pet");
     assert.equal(status.pets[0].id, "test-pet");
   });
+});
+
+test("example Pet matches the public 1536x1872 and 20 MiB baseline", async () => {
+  const validation = await validatePetDirectory(join(skillRoot, "examples/pets/mascot"), { contract: DEFAULT_PET_CONTRACT, allowProvisional: true });
+  assert.deepEqual(validation.dimensions, { width: 1536, height: 1872, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true });
+  assert.ok((await readFile(validation.spritesheet)).length <= 20 * 1024 * 1024);
 });
 
 test("creates and validates a paired theme and Pet bundle", async () => {

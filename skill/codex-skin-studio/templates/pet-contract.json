@@ -13,7 +13,8 @@
   },
   "spritesheet": {
     "format": "webp",
-    "colorMode": "rgba"
+    "colorMode": "rgba",
+    "maxBytes": 20971520
   },
   "rows": [
     "idle",

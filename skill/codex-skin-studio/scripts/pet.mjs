@@ -22,6 +22,11 @@ if (!sharp) {
 }
 
 export const PET_CONTRACT_SCHEMA = 1;
+const PET_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+const DEFAULT_MAX_INPUT_BYTES = 25 * 1024 * 1024;
+const DEFAULT_MAX_ATLAS_BYTES = 20 * 1024 * 1024;
+
 export const DEFAULT_PET_CONTRACT = {
   schemaVersion: PET_CONTRACT_SCHEMA,
   contractVersion: "chatgpt-desktop-pet-8x9-provisional",
@@ -29,14 +34,9 @@ export const DEFAULT_PET_CONTRACT = {
   source: "codex-skin-studio-template",
   grid: { columns: 8, rows: 9 },
   frame: { width: 192, height: 208 },
-  spritesheet: { format: "webp", colorMode: "rgba" },
+  spritesheet: { format: "webp", colorMode: "rgba", maxBytes: DEFAULT_MAX_ATLAS_BYTES },
   rows: ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"],
 };
-
-const PET_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
-const DEFAULT_MAX_INPUT_BYTES = 25 * 1024 * 1024;
-const DEFAULT_MAX_ATLAS_BYTES = 20 * 1024 * 1024;
 
 export function petError(code, message, details = undefined) {
   const error = new Error(message);
@@ -96,6 +96,10 @@ function assertInteger(value, label, min = 1, max = 8192) {
   if (!Number.isInteger(value) || value < min || value > max) throw petError("PET_CONTRACT_MISMATCH", `${label} must be an integer from ${min} through ${max}`);
 }
 
+function maxAtlasBytes(contract) {
+  return contract.spritesheet?.maxBytes || DEFAULT_MAX_ATLAS_BYTES;
+}
+
 export function validateContract(contract, { allowProvisional = false } = {}) {
   if (!contract || typeof contract !== "object") throw petError("PET_CONTRACT_MISMATCH", "pet contract must be an object");
   if (contract.schemaVersion !== PET_CONTRACT_SCHEMA) throw petError("PET_CONTRACT_MISMATCH", `unsupported pet contract schema: ${contract.schemaVersion}`);
@@ -106,6 +110,7 @@ export function validateContract(contract, { allowProvisional = false } = {}) {
   assertInteger(contract.frame?.height, "frame.height");
   if (!Array.isArray(contract.rows) || contract.rows.length !== contract.grid.rows || contract.rows.some((row) => typeof row !== "string" || !row.trim())) throw petError("PET_CONTRACT_MISMATCH", "pet contract must define exactly nine named rows");
   if (contract.spritesheet?.format !== "webp" || contract.spritesheet?.colorMode !== "rgba") throw petError("PET_CONTRACT_MISMATCH", "pet contract must require RGBA WebP output");
+  if (contract.spritesheet.maxBytes !== undefined && (!Number.isInteger(contract.spritesheet.maxBytes) || contract.spritesheet.maxBytes < 1 || contract.spritesheet.maxBytes > 100 * 1024 * 1024)) throw petError("PET_CONTRACT_MISMATCH", "spritesheet.maxBytes must be between 1 and 104857600");
   return contract;
 }
 
@@ -215,7 +220,7 @@ export async function createPet({ id, displayName, description, frames, out, con
     }
     const atlasPath = join(staging, "spritesheet.webp");
     const atlas = await image({ create: { width: frameWidth * contract.grid.columns, height: frameHeight * contract.grid.rows, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite(composites).webp({ quality: 86, alphaQuality: 100, effort: 4 }).toBuffer();
-    if (atlas.length > DEFAULT_MAX_ATLAS_BYTES) throw petError("PET_SPRITESHEET_INVALID", `generated spritesheet exceeds ${DEFAULT_MAX_ATLAS_BYTES} bytes`);
+    if (atlas.length > maxAtlasBytes(contract)) throw petError("PET_SPRITESHEET_INVALID", `generated spritesheet exceeds ${maxAtlasBytes(contract)} bytes`);
     await writeFile(atlasPath, atlas);
     const manifest = {
       id: petId,
@@ -305,7 +310,7 @@ export async function validatePetDirectory(directory, { contract, allowProvision
   const extension = extname(spritesheet).toLowerCase();
   if (extension !== ".webp" && extension !== ".png") throw petError("PET_MANIFEST_INVALID", "spritesheet must be WebP or PNG");
   const details = await stat(spritesheet).catch((error) => { throw petError("PET_IMAGE_INVALID", `spritesheet does not exist: ${spritesheet}`, { cause: error.message }); });
-  if (!details.isFile() || details.size === 0 || details.size > DEFAULT_MAX_ATLAS_BYTES) throw petError("PET_SPRITESHEET_INVALID", "spritesheet is empty or too large");
+  if (!details.isFile() || details.size === 0 || details.size > maxAtlasBytes(contract)) throw petError("PET_SPRITESHEET_INVALID", `spritesheet is empty or exceeds ${maxAtlasBytes(contract)} bytes`);
   const imageInfo = await validateCorners(spritesheet);
   const expected = { width: contract.frame.width * contract.grid.columns, height: contract.frame.height * contract.grid.rows };
   if (imageInfo.width !== expected.width || imageInfo.height !== expected.height) throw petError("PET_SPRITESHEET_INVALID", `spritesheet must be ${expected.width}x${expected.height}`);

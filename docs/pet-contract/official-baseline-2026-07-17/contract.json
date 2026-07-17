@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "recordStatus": "reference-not-observed",
+  "source": "OpenAI ChatGPT Pets documentation",
+  "sourceUrl": "https://learn.chatgpt.com/docs/pets?surface=app",
+  "webUploadBaseline": {
+    "format": ["png", "webp"],
+    "colorMode": "rgba",
+    "width": 1536,
+    "height": 1872,
+    "maxBytes": 20971520
+  },
+  "desktop": {
+    "customPetFlow": [
+      "Settings > Pets > Create your own pet",
+      "bundled hatch-pet workflow",
+      "Settings > Pets > Refresh",
+      "choose the new Pet",
+      "use /pet to wake the Pet"
+    ],
+    "manifestSchema": "not-published",
+    "atlasRowMapping": "not-published",
+    "programmaticSelection": "not-published",
+    "localObservation": "not-observed"
+  }
+}

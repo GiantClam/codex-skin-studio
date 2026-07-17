@@ -1,12 +1,12 @@
 # ChatGPT Desktop Codex Pet Skill 方案
 
-> 状态：MVP 实施规格；必须先完成 P0 官方契约冻结，再进入 P1 编码
+> 状态：MVP 实施中；P1 工具和 Skill 已落地，P0 Desktop 契约冻结与原生端到端验收仍待完成
 > 研究日期：2026-07-17
 > 目标平台：ChatGPT Desktop macOS 和 Windows
 > 关联项目：`codex-skin-studio`
 > 产品边界：Pet 是独立的浮动 Overlay，不是主窗口 CSS 皮肤，也不是 `app.asar` 修改方案。
 
-> 重要说明：本文同时记录已确认的产品决策和待 P0 实测的应用契约。任何未被真实 `hatch-pet` 输出或 ChatGPT Desktop Refresh 验证的字段、行映射和尺寸，都不能作为安装器的硬编码依据。
+> 重要说明：本文同时记录已确认的产品决策、官方公开规格和待 P0 实测的应用契约。官方 Web 上传规格为透明 PNG/WebP、`1536 × 1872`、不超过 `20 MiB`，但这不等于已经冻结 ChatGPT Desktop 的 `hatch-pet` manifest 或行映射。任何未被真实 `hatch-pet` 输出或 ChatGPT Desktop Refresh 验证的字段，都不能作为 Desktop 安装器的硬编码依据。
 
 ## 0. 实施标准和完成定义
 
@@ -268,7 +268,7 @@ Codex Image Generation
 8. 导出 RGBA WebP。
 9. 输出 contact sheet 供 Vision 检查。
 
-图集总宽度必须能被 8 整除，总高度必须能被 9 整除。社区示例使用过 `1536 × 1872` 的 RGBA WebP，但尺寸不是本 Skill 的永久硬编码值；实际尺寸由当前 Pet 渲染契约和生成质量共同决定。
+默认图集使用 8 列 × 9 行，每帧 `192 × 208`，因此输出为 `1536 × 1872`。这与官方 Web 自定义 Pet 的公开上传规格一致：透明 PNG/WebP、恰好 `1536 × 1872`、不超过 `20 MiB`。但该公开规格不能替代 ChatGPT Desktop 的已观测 `hatch-pet` 契约；Desktop 行语义和 manifest 仍必须以 P0 实测为准。
 
 ## 5. Pet 文件契约
 
@@ -292,6 +292,19 @@ Codex Image Generation
 MVP 不应自行添加未经当前应用验证的 `animation`、`chains` 或事件字段。社区已有提案希望让这些字段可配置，但当前应用仍主要负责动画行和事件映射。[OpenAI Codex Issue #20863](https://github.com/openai/codex/issues/20863)
 
 ### 5.1 P0 官方契约冻结
+
+官方公开基线和本机观测记录保存在：
+
+```text
+docs/pet-contract/official-baseline-2026-07-17/
+├── README.md
+└── contract.json
+```
+
+该记录的 `recordStatus` 是 `reference-not-observed`，不是可直接安装的
+Desktop contract。官方文档确认了 Web 上传的透明 PNG/WebP、`1536 × 1872`
+和 `20 MiB` 上限，也确认了 Desktop 的 `Settings > Pets > Refresh` 和
+`/pet` 流程；它没有公开 Desktop manifest、行映射或程序化选择 API。
 
 在编写安装器之前，必须通过当前 ChatGPT Desktop 和官方 `hatch-pet` Skill 取得一份真实样例。P0 产物保存为内部开发记录，不上传用户参考图或生成中间图：
 
@@ -656,11 +669,11 @@ Codex 原生 Image Generation
 
 截至 2026-07-17：
 
-- Pet 图集生成、chroma-key 去背景、RGBA WebP 输出、manifest 校验、原子安装和本地状态查询已经实现；
+- Pet 图集生成、chroma-key 去背景、RGBA WebP 输出、`1536 × 1872` / `20 MiB` 官方公开基线校验、manifest 校验、原子安装和本地状态查询已经实现；
 - 配套主题 + Pet Bundle 创建、配套切换和合并状态查询已经实现；
 - 英文 `SKILL.md` 已加入 Pet 和配套 Bundle 编排规则；
-- 自动化回归测试为 `82/82`；
-- 当前模板 contract 仍为 `provisional`，正常安装会拒绝它；
+- 自动化回归测试为 `83/83`；
+- 当前模板 contract 仍为 `provisional`，正常安装会拒绝它；`--allow-provisional` 只用于本地开发和示例验证；
 - 本机 ChatGPT Desktop `26.715.21316` 的当前 Renderer DOM 和 `~/.codex/pets` 未发现 Pets / `hatch-pet` 可观测契约，因此 P0 官方契约冻结和真实 Refresh、选择、`/pet` 端到端验收仍未完成。
 
 这不是实现失败，而是刻意保留的安全门：没有真实应用契约时，工具宁可返回 `PET_CONTRACT_MISMATCH`，也不能生成一个看似成功但无法被 ChatGPT Desktop 识别的 Pet。

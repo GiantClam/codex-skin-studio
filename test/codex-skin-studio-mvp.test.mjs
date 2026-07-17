@@ -469,6 +469,7 @@ test("selects only the main renderer through a DOM probe", async () => {
   assert.equal(main.id, "main");
   assert.equal(calls[0].expression, MAIN_TARGET_PROBE);
   assert.equal(calls.length, 2);
+  assert.match(MAIN_TARGET_PROBE, /app:\/\/-\/index\.html/);
 });
 
 test("transient main-target probe errors are opt-in", async () => {

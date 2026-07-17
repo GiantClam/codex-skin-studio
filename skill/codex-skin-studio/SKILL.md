@@ -9,10 +9,12 @@ Let Codex handle visual decisions. Delegate file validation, application discove
 restart orchestration, and CDP injection to `scripts/apply.mjs`.
 
 This Skill also supports an optional paired Pet workflow. A paired bundle contains
-one ChatGPT Desktop theme and one compatible Pet package. The theme can be applied
-automatically; Pet installation is local and final Pet selection must be confirmed
-through ChatGPT Desktop Settings > Pets > Refresh unless the current official Pet
-contract exposes a supported selection API.
+one ChatGPT Desktop theme and one compatible Pet package. The theme is applied
+automatically and the Pet is installed locally. On supported ChatGPT Desktop
+builds, `switch-paired.mjs` uses the versioned visible Settings > Pets adapter to
+Refresh, select the matching Pet, and verify the selected row. It does not write
+private app state or modify application resources. If the visible UI is unavailable,
+the command keeps the theme result and returns a truthful manual-refresh fallback.
 
 The bundled default example is `examples/slayers-xellos-night/`. Use it as a
 known-good reference for the one-shot theme file layout and as the starter skin
@@ -369,20 +371,32 @@ node "$SKILL_ROOT/scripts/switch-paired.mjs" \
 ```
 
 This command validates the complete bundle, installs the matching Pet, applies
-the matching theme through `apply.mjs`, and records paired state. It must report
+the matching theme through `apply.mjs`, attempts the versioned visible ChatGPT
+Desktop Pets Settings adapter, and records paired state. A native success is
+reported as `theme-applied-pet-selected` or
+`theme-scheduled-pet-selected`, and includes `petUi.selection:
+native-ui-confirmed`. The adapter uses stable visible attributes and visible
+button labels only; it does not use private React state, private storage, or
+arbitrary screen coordinates. On macOS it opens Settings through AppleScript.
+On Windows it uses the standard ChatGPT Settings shortcut through PowerShell;
+accessibility or keyboard automation failures fall back without undoing the
+theme application.
+
+When native selection is unavailable, the command reports
 `theme-applied-pet-refresh-required` or
-`theme-scheduled-pet-refresh-required`, never pretend that Pet selection has
-completed. The user must then use ChatGPT Desktop Settings > Pets > Refresh,
-choose the matching Pet, and invoke `/pet`. Inspect the combined state with:
+`theme-scheduled-pet-refresh-required`. The user must then use ChatGPT Desktop
+Settings > Pets > Refresh, choose the matching Pet, and invoke `/pet`. Inspect
+the combined state with:
 
 ```bash
 node "$SKILL_ROOT/scripts/paired-status.mjs" --json
 ```
 
-Do not automate arbitrary Settings clicks or modify application resources. If a
-future official API exposes Pet refresh and selection, add a versioned adapter
-behind `switch-paired.mjs` and require a real postcondition before reporting
-`paired-active`.
+Use `--manual-pet` to skip native Pet selection and deliberately require the
+manual Refresh flow. The adapter is best-effort and versioned because ChatGPT
+Desktop does not expose a public third-party Pet selection API. Require a real
+visible selected-row postcondition before reporting native selection; never
+report a paired success from local file installation alone.
 
 ## Validate
 

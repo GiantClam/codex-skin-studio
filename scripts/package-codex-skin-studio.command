@@ -26,6 +26,7 @@ EXPECTED=(
   "scripts/paired.mjs"
   "scripts/pet.mjs"
   "scripts/persist.mjs"
+  "scripts/pet-desktop.mjs"
   "scripts/switch-paired.mjs"
   "scripts/validate-pet.mjs"
   "templates/pet-contract.json"

@@ -16,7 +16,8 @@ import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRest
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
 import { buildPlist, buildTaskXml, createControlServer, parseArgs as parsePersistArgs } from "../skill/codex-skin-studio/scripts/persist.mjs";
 import { createPet, defaultPetsDir, DEFAULT_PET_CONTRACT, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
-import { createPairBundle, validatePairBundle } from "../skill/codex-skin-studio/scripts/paired.mjs";
+import { buildMacOpenSettingsScript, buildWindowsOpenSettingsScript, OPEN_PETS_PANEL_EXPRESSION, petSelectionStateExpression, REFRESH_PETS_EXPRESSION, selectPetExpression } from "../skill/codex-skin-studio/scripts/pet-desktop.mjs";
+import { createPairBundle, switchPairBundle, validatePairBundle } from "../skill/codex-skin-studio/scripts/paired.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -1355,8 +1356,58 @@ test("creates and validates a paired theme and Pet bundle", async () => {
   });
 });
 
+test("uses visible ChatGPT Desktop Pets controls instead of private app state", () => {
+  assert.match(buildMacOpenSettingsScript(), /Settings/);
+  assert.match(buildWindowsOpenSettingsScript(), /SendKeys\('\^,'\)/);
+  assert.match(OPEN_PETS_PANEL_EXPRESSION, /data-settings-panel-slug=\\?\"pets/);
+  assert.match(REFRESH_PETS_EXPRESSION, /button\[aria-label\]/);
+  assert.match(selectPetExpression("paired-demo"), /custom:paired-demo/);
+  assert.match(petSelectionStateExpression("paired-demo"), /已选/);
+});
+
+test("paired switch records a native Pet selection postcondition", async () => {
+  await withTempDir("codex-paired-switch-", async (root) => {
+    const frames = await makePetFrames(root);
+    const pet = await createPet({ id: "paired-demo", displayName: "Paired Demo", frames, out: join(root, "pet"), contract: observedPetContract });
+    const theme = join(root, "theme");
+    await makeTheme(theme, { ...validManifest, id: "paired-demo", name: "Paired Demo" });
+    const bundle = await createPairBundle({ id: "paired-demo", displayName: "Paired Demo", themeDir: theme, petDir: pet.directory, out: join(root, "bundle"), contract: observedPetContract });
+    const result = await switchPairBundle(bundle.directory, {
+      contract: observedPetContract,
+      petsDir: join(root, "pets"),
+      commandApplyFn: async () => ({ status: "applied", themeId: "paired-demo" }),
+      selectPetFn: async ({ petId }) => ({ status: "selected", selection: "native-ui-confirmed", petId, adapterVersion: "test", refreshed: true }),
+      appDataRootFn: () => join(root, "app-data"),
+    });
+    assert.equal(result.status, "theme-applied-pet-selected");
+    assert.equal(result.pairedState.petSelection, "native-ui-confirmed");
+    assert.equal((await petStatus({ petsDir: join(root, "pets") })).selection, "native-ui-confirmed");
+    assert.equal(JSON.parse(await readFile(join(root, "app-data", "paired-state.json"), "utf8")).petUi.selection, "native-ui-confirmed");
+  });
+});
+
+test("paired switch preserves an explicit manual-refresh fallback when native UI is unavailable", async () => {
+  await withTempDir("codex-paired-fallback-", async (root) => {
+    const frames = await makePetFrames(root);
+    const pet = await createPet({ id: "paired-demo", displayName: "Paired Demo", frames, out: join(root, "pet"), contract: observedPetContract });
+    const theme = join(root, "theme");
+    await makeTheme(theme, { ...validManifest, id: "paired-demo", name: "Paired Demo" });
+    const bundle = await createPairBundle({ id: "paired-demo", displayName: "Paired Demo", themeDir: theme, petDir: pet.directory, out: join(root, "bundle"), contract: observedPetContract });
+    const result = await switchPairBundle(bundle.directory, {
+      contract: observedPetContract,
+      petsDir: join(root, "pets"),
+      commandApplyFn: async () => ({ status: "scheduled", themeId: "paired-demo" }),
+      selectPetFn: async () => { throw Object.assign(new Error("settings unavailable"), { code: "PET_NATIVE_UI_UNAVAILABLE" }); },
+      appDataRootFn: () => join(root, "app-data"),
+    });
+    assert.equal(result.status, "theme-scheduled-pet-refresh-required");
+    assert.equal(result.pairedState.petSelection, "refresh-required");
+    assert.equal(result.petSelection.code, "PET_NATIVE_UI_UNAVAILABLE");
+  });
+});
+
 test("distribution files are English ASCII text and SKILL has valid frontmatter", async () => {
-  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/switch-paired.mjs", "scripts/validate-pet.mjs", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
+  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet-desktop.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/switch-paired.mjs", "scripts/validate-pet.mjs", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
   const binaryExpected = ["examples/pets/mascot/spritesheet.webp", "examples/slayers-xellos-night/hero.webp"];
   assert.deepEqual(await listFiles(skillRoot), [...textExpected, ...binaryExpected].sort((a, b) => a.localeCompare(b)));
   const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
@@ -1429,6 +1480,7 @@ test("package script creates exactly the new Skill folder contents", async () =>
     "codex-skin-studio/scripts/paired.mjs",
     "codex-skin-studio/scripts/pet.mjs",
     "codex-skin-studio/scripts/persist.mjs",
+    "codex-skin-studio/scripts/pet-desktop.mjs",
     "codex-skin-studio/scripts/switch-paired.mjs",
     "codex-skin-studio/scripts/validate-pet.mjs",
     "codex-skin-studio/templates/",

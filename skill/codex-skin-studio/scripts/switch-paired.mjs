@@ -16,7 +16,7 @@ async function main() {
   const options = parsePetArgs(process.argv.slice(2));
   const allowProvisional = options.get("allow-provisional") === true;
   const contract = await loadPetContract(required(options, "contract"), { allowProvisional });
-  const result = await switchPairBundle(required(options, "bundle"), { contract, petsDir: options.get("pets-dir") || defaultPetsDir(), port: options.has("port") ? Number(options.get("port")) : 9341, replace: options.get("replace") !== false, allowProvisional });
+  const result = await switchPairBundle(required(options, "bundle"), { contract, petsDir: options.get("pets-dir") || defaultPetsDir(), port: options.has("port") ? Number(options.get("port")) : 9341, replace: options.get("replace") !== false, allowProvisional, nativePet: options.get("manual-pet") !== true });
   console.log(options.get("json") ? json(result) : result.nextAction);
 }
 

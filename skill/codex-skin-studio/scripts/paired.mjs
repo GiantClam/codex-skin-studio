@@ -5,7 +5,8 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { appDataRoot, commandApply, commandStatus, loadTheme } from "./apply.mjs";
-import { defaultPetsDir, installPet, loadPetContract, petError, petStatus, validatePetDirectory } from "./pet.mjs";
+import { defaultPetsDir, installPet, loadPetContract, petError, petStatus, recordPetSelection, validatePetDirectory } from "./pet.mjs";
+import { selectPetInChatGptDesktop } from "./pet-desktop.mjs";
 
 const BUNDLE_SCHEMA = 1;
 
@@ -87,15 +88,30 @@ export async function createPairBundle({ id, displayName, themeDir, petDir, out,
   }
 }
 
-export async function switchPairBundle(directory, { contract, petsDir = defaultPetsDir(), port = 9341, replace = true, allowProvisional = false } = {}) {
+export async function switchPairBundle(directory, { contract, petsDir = defaultPetsDir(), port = 9341, replace = true, allowProvisional = false, nativePet = true, selectPetFn = selectPetInChatGptDesktop, commandApplyFn = commandApply, appDataRootFn = appDataRoot } = {}) {
   const bundle = await validatePairBundle(directory, { contract, allowProvisional });
   const petInstall = await installPet(join(bundle.directory, bundle.bundle.petPath), { petsDir, contract, replace, allowProvisional });
-  const themeApplication = await commandApply(join(bundle.directory, bundle.bundle.themePath), port);
-  const stateRoot = appDataRoot();
+  const themeApplication = await commandApplyFn(join(bundle.directory, bundle.bundle.themePath), port);
+  let petSelection;
+  if (!nativePet) {
+    petSelection = { status: "manual", selection: "refresh-required", reason: "native Pet UI selection was disabled" };
+  } else {
+    try {
+      petSelection = await selectPetFn({ petId: bundle.bundle.petId, port });
+    } catch (error) {
+      petSelection = { status: "manual", selection: "refresh-required", code: error.code || "PET_NATIVE_UI_UNAVAILABLE", message: error.message };
+    }
+  }
+  if (petSelection.selection === "native-ui-confirmed") {
+    await recordPetSelection({ petsDir, petId: bundle.bundle.petId, selection: petSelection.selection });
+  }
+  const stateRoot = appDataRootFn();
   await mkdir(stateRoot, { recursive: true });
-  const pairedState = { schemaVersion: 1, bundleId: bundle.id, themeId: bundle.bundle.themeId, petId: bundle.bundle.petId, switchedAt: new Date().toISOString(), themeStatus: themeApplication.status, petStatus: petInstall.status, petSelection: "refresh-required" };
+  const pairedState = { schemaVersion: 1, bundleId: bundle.id, themeId: bundle.bundle.themeId, petId: bundle.bundle.petId, switchedAt: new Date().toISOString(), themeStatus: themeApplication.status, petStatus: petInstall.status, petSelection: petSelection.selection, petUi: petSelection };
   await writeFile(join(stateRoot, "paired-state.json"), `${json(pairedState)}\n`);
-  return { status: themeApplication.status === "applied" ? "theme-applied-pet-refresh-required" : "theme-scheduled-pet-refresh-required", bundle: bundle.id, theme: themeApplication, pet: petInstall, nextAction: "Open ChatGPT Desktop Settings > Pets > Refresh, choose the installed matching Pet, then use /pet.", pairedState };
+  const selected = petSelection.selection === "native-ui-confirmed";
+  const themeStatus = themeApplication.status === "applied" ? "theme-applied" : "theme-scheduled";
+  return { status: `${themeStatus}-pet-${selected ? "selected" : "refresh-required"}`, bundle: bundle.id, theme: themeApplication, pet: petInstall, petSelection, nextAction: selected ? "Invoke /pet in ChatGPT Desktop to confirm the matching Pet overlay." : "Open ChatGPT Desktop Settings > Pets > Refresh, choose the installed matching Pet, then use /pet.", pairedState };
 }
 
 export async function pairedStatus({ petsDir = defaultPetsDir(), port = 9341 } = {}) {

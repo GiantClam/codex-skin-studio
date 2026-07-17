@@ -73,7 +73,7 @@ function requiredOption(options, name) {
 
 export function parsePetArgs(argv) {
   const options = new Map();
-  const booleanFlags = new Set(["json", "replace", "dry-run", "allow-provisional", "chroma-key"]);
+  const booleanFlags = new Set(["json", "replace", "dry-run", "allow-provisional", "chroma-key", "manual-pet"]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (!arg.startsWith("--")) throw petError("PET_INPUT_INVALID", `unexpected argument: ${arg}`);
@@ -450,6 +450,17 @@ export async function petStatus({ petsDir = defaultPetsDir() } = {}) {
   let state = null;
   try { state = await readJsonFile(join(root, ".codex-skin-studio-pet-state.json")); } catch { state = null; }
   return { status: "ok", petsDir: root, active: state?.installedId || null, selection: state?.selection || "unknown", pets: await listInstalledPets({ petsDir: root }) };
+}
+
+export async function recordPetSelection({ petsDir = defaultPetsDir(), petId, selection = "native-ui-confirmed" } = {}) {
+  assertPetId(petId);
+  const root = resolve(petsDir);
+  const statePath = join(root, ".codex-skin-studio-pet-state.json");
+  let current = {};
+  try { current = await readJsonFile(statePath); } catch { current = {}; }
+  const next = { ...current, schemaVersion: 1, installedId: petId, directory: join(root, petId), selection, selectedAt: new Date().toISOString() };
+  await writeJsonFile(statePath, next);
+  return next;
 }
 
 async function cli() {

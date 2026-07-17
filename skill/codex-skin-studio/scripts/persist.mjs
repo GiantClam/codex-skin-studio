@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 
 import {
   appInfoSync,
+  clearFailureState,
   commandApply,
   delay,
   discover,
@@ -344,7 +345,7 @@ async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, poll
             try {
               const saved = await savedTheme(state);
               await injectTheme(list, saved);
-              await writeState({ ...state, active: true, restartPending: false, restartWorkerPid: null, reappliedAt: new Date().toISOString() });
+              await writeState({ ...clearFailureState(state), active: true, restartPending: false, restartWorkerPid: null, reappliedAt: new Date().toISOString() });
             } finally {
               applyLock.active = false;
             }

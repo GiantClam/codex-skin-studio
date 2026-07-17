@@ -51,6 +51,12 @@ function fail(code, message, extra = {}) {
   return { status: "failed", code, message, ...extra };
 }
 
+function clearFailureState(state) {
+  const next = { ...(state || {}) };
+  for (const key of ["failedAt", "error", "processExited"]) delete next[key];
+  return next;
+}
+
 function commandErrorCode(error) {
   const preservedCodes = new Set(["NO_ELIGIBLE_RENDERER", "RESTORE_FAILED", "RESTART_SCHEDULE_FAILED"]);
   const explicit = error?.code || (error instanceof AggregateError ? error.errors.find((item) => preservedCodes.has(item?.code))?.code : null);
@@ -1501,7 +1507,7 @@ async function commandApply(dir, port, { persistFn = persist, writeStateFn = wri
       if (typeof injectionError?.rollback === "function") injection = { rollback: injectionError.rollback };
       throw injectionError;
     }
-    await writeStateFn({ ...(prior || {}), themeId: saved.manifest.id, themeDir: saved.destination, assetFlags: assetFlags(saved.manifest), appliedAt: new Date().toISOString(), active: true, restartPending: false, restartWorkerPid: null });
+    await writeStateFn({ ...clearFailureState(prior), themeId: saved.manifest.id, themeDir: saved.destination, assetFlags: assetFlags(saved.manifest), appliedAt: new Date().toISOString(), active: true, restartPending: false, restartWorkerPid: null });
     stateWritten = true;
     await commit();
     return { status: "applied", themeId: saved.manifest.id, rendererCount: injection?.rendererCount ?? 1, restartRequired: false };
@@ -1616,7 +1622,7 @@ async function main() {
   console.log(args.jsonOutput ? json(result) : result.message || json(result));
 }
 
-export { BRAND_STYLE_PRESETS, appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
+export { BRAND_STYLE_PRESETS, appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, clearFailureState, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     const result = fail(commandErrorCode(error), error.message);

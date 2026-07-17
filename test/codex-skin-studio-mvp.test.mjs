@@ -893,6 +893,25 @@ test("apply schedules only for a confirmed unavailable CDP listener", async () =
   });
 });
 
+test("successful apply clears stale failure diagnostics", async () => {
+  await withTempDir("codex-skin-apply-clear-failure-", async (root) => {
+    await makeTheme(root);
+    const writes = [];
+    await commandApply(root, 9341, {
+      platformFn: () => "darwin",
+      persistFn: async () => ({ destination: root, manifest: validManifest }),
+      readStateFn: async () => ({ themeId: "old-theme", active: true, failedAt: "yesterday", error: "old failure", processExited: true }),
+      writeStateFn: async (value) => writes.push(value),
+      targetsFn: async () => [{ id: "main" }],
+      injectFn: async () => ({ rendererCount: 1 }),
+    });
+    assert.equal(writes.at(-1).active, true);
+    assert.equal(writes.at(-1).failedAt, undefined);
+    assert.equal(writes.at(-1).error, undefined);
+    assert.equal(writes.at(-1).processExited, undefined);
+  });
+});
+
 test("apply preserves verified state until injection or worker spawn succeeds", async () => {
   await withTempDir("codex-skin-apply-state-", async (root) => {
     await makeTheme(root);

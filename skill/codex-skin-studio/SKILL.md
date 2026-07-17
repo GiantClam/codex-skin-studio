@@ -255,6 +255,8 @@ node "$SKILL_ROOT/scripts/persist.mjs" status --json
 
 Skill installation itself only copies files and cannot start a process. On the first explicit apply or replace request, check `persist.mjs status`; when it is `disabled`, run `persist.mjs install` automatically before reporting completion. This is the default persistence behavior for an applied skin, not a requirement for design-only work.
 
+After upgrading or re-syncing the Skill files, run `persist.mjs install` even when the worker already reports `enabled`. The worker is a long-lived Node.js process and loads the control server and theme discovery code only at startup; re-registering the LaunchAgent refreshes `/themes` and prevents stale switch requests such as `local theme was not found`.
+
 On macOS, `persist.mjs install` creates a user-level LaunchAgent. On Windows, it creates a user-level Windows Task Scheduler task named `CodexSkinStudio`, triggered at interactive logon. Both workers are separate Node.js processes, use loopback CDP, launch ChatGPT Desktop with `--remote-debugging-address=127.0.0.1` and the selected port when needed, and reapply the theme after a renderer restart. Do not use a ChatGPT Scheduled Task for this job; it is unrelated to the local OS worker.
 
 The persistence worker may restart ChatGPT Desktop after a normal launch and may reopen it while persistence is enabled. It never modifies `app.asar`, the application signature, or the Windows installation. Remove the platform-native worker with:

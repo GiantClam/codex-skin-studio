@@ -16,11 +16,11 @@ $node = $nodeCommand.Source
 
 function Invoke-Node {
     param([string[]]$Arguments)
-    $output = & $node @Arguments 2>&1
+    $output = (& $node @Arguments 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) {
-        throw "Node command failed with exit code $LASTEXITCODE`n$($output -join "`n")"
+        throw "Node command failed with exit code $LASTEXITCODE`n$output"
     }
-    return ($output -join "`n")
+    return $output.Trim()
 }
 
 function Test-Cdp {

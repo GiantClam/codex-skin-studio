@@ -721,8 +721,8 @@ mark,
 #${SWITCHER_ID} {
   position: fixed;
   top: 8px;
-  right: clamp(96px, 11vw, 148px);
-  z-index: 80;
+  right: clamp(156px, 14vw, 208px);
+  z-index: 20;
   color: var(--codex-skin-text);
   font: 600 12px/1.2 ui-rounded, system-ui, sans-serif;
 }
@@ -734,10 +734,12 @@ mark,
 
 #${SWITCHER_ID} > button {
   display: inline-flex;
-  min-height: 30px;
+  min-width: 104px;
+  min-height: 40px;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
+  justify-content: center;
+  padding: 0 14px;
   border: 1px solid color-mix(in srgb, var(--codex-skin-accent) 58%, var(--codex-skin-panel-surface));
   border-radius: 9px;
   color: var(--codex-skin-text);
@@ -745,6 +747,13 @@ mark,
   box-shadow: 0 5px 18px color-mix(in srgb, var(--codex-skin-surface) 44%, transparent), 0 0 0 1px color-mix(in srgb, var(--codex-skin-accent) 12%, transparent);
   backdrop-filter: blur(14px) saturate(1.15);
   cursor: pointer;
+}
+
+body [role="menu"]:not(#${SWITCHER_ID}-menu),
+body [role="listbox"],
+body [data-radix-menu-content],
+body [data-radix-popper-content-wrapper] {
+  z-index: 1000 !important;
 }
 
 #${SWITCHER_ID} > button:hover,

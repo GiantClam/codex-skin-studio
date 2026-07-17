@@ -8,7 +8,11 @@
 
 本项目仅将 [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) 作为研究和设计参考，独立实现轻量版本，不是对其完整仓库 Fork 后修改，也不宣称功能完全一致。当前范围是 Codex Skill 加轻量本地运行时，后续计划独立扩展皮肤网站能力。
 
-当前应用名称是 ChatGPT Desktop。macOS 技术 Bundle ID 为 `com.openai.codex`；Windows 使用 ChatGPT 可执行文件。
+当前应用名称是 ChatGPT Desktop。macOS 技术 Bundle ID 为 `com.openai.codex`；Windows 已支持官方独立版 Codex / ChatGPT Desktop 客户端，包括 Microsoft Store（MSIX）安装和普通可执行文件安装。运行时会自动发现客户端，不依赖具体用户名、盘符或 `WindowsApps` 路径。
+
+## Windows 平台支持
+
+Windows 平台已经支持 Codex / ChatGPT Desktop 换肤的完整流程：发现官方客户端、通过 AUMID 启动 MSIX、在 `127.0.0.1:9341` 建立本机 CDP、注入并验证主题，以及通过用户级 `CodexSkinStudio` Task Scheduler 任务在登录、应用启动和 Renderer 重载后自动恢复。整个过程不修改 `app.asar`、签名、二进制文件或官方 JavaScript，也不需要管理员权限。
 
 ## 核心能力
 
@@ -21,6 +25,7 @@
 - 品牌名只替换顶部 workspace label，不误伤项目 Session 和账户区域。
 - 只通过 `127.0.0.1` 本机 CDP 通信。
 - 可选 macOS LaunchAgent 或 Windows Task Scheduler，自动处理登录、应用启动和 Renderer 重载。
+- 支持官方 Windows 独立版 Codex / ChatGPT Desktop，包括 MSIX 和普通可执行文件安装。
 - 对话区域右上角提供 `Skins` 按钮，可以直接切换本地已生成的有效主题。
 - `Skins` 菜单打开时和运行期间会自动刷新本地主题，新创建的主题无需重启 ChatGPT Desktop 即可出现。
 - 过大的 PNG/JPG 主背景会先在 Renderer 中解码并压缩为较小的 WebP Data URL，避免 CSS 过大导致背景规则被静默丢弃。
@@ -78,7 +83,9 @@ skill/codex-skin-studio/
 │   ├── paired-status.mjs
 │   ├── paired.mjs
 │   ├── pet.mjs
-│   └── persist.mjs
+│   ├── persist.mjs
+│   └── windows/
+│       └── apply.ps1
 ├── templates/
 │   ├── pet-contract.json
 │   ├── pet.json
@@ -91,6 +98,7 @@ skill/codex-skin-studio/
         └── theme.json
 
 scripts/
+├── package-codex-skin-studio.mjs
 └── package-codex-skin-studio.command
 
 test/
@@ -128,6 +136,48 @@ rsync -a --delete skill/codex-skin-studio/ "$HOME/.codex/skills/codex-skin-studi
 ```
 
 Skill 安装本身只复制文件，不启动后台进程。用户首次明确要求应用主题时，Skill 会检查并自动启用持久化 worker。
+
+### Windows 新用户：首次安装和一次性应用
+
+安装 Skill 后，官方独立版 Windows Codex / ChatGPT Desktop 按以下步骤操作：
+
+1. 确认官方桌面客户端已经安装，并在 PowerShell 中确认 `node` 可用。runner 会自动发现 MSIX 和普通可执行文件安装，不要手写 `C:\Users\...` 或 `WindowsApps` 路径。
+2. 给 Codex 发起一次完整请求，例如：
+
+   ```text
+   创建并应用一个深色赛博朋克 ChatGPT Desktop 皮肤。请生成并检查 hero，创建或更新完整主题目录，启用持久化，并给出 Windows 外部 PowerShell runner 指令；最终确认状态为 active。
+   ```
+
+3. 等待 Skill 完成原生生图、hero 检查、`theme.json` 和本地资源创建，以及主题校验。如果直接使用本地背景图，请提供非空的 PNG、JPEG 或 WebP 文件。
+4. 将 Skill 返回的确切主题目录填入下面的命令，在独立 PowerShell 窗口执行。它会自动校验主题、优雅关闭当前客户端、发现并启动官方客户端、通过 AUMID 建立 CDP、注入皮肤，并在 `-Persist` 下安装登录后恢复任务：
+
+   ```powershell
+   $theme = "$env:APPDATA\CodexSkinStudio\themes\my-theme"
+   powershell -NoProfile -ExecutionPolicy Bypass -File `
+     "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\windows\apply.ps1" `
+     -ThemeDir $theme -Persist
+   ```
+
+runner 必须返回：
+
+```json
+{"status":"applied"}
+```
+
+也可以在 PowerShell 中进一步验证：
+
+```powershell
+node "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\apply.mjs" status --json
+node "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\persist.mjs" status --json
+```
+
+第一个命令必须得到 `status: "active"`，并且主题 ID 正确、`connected: true`、`heroLoaded: true`。启用持久化后，第二个命令应包含 `status: "enabled"` 和 `running: true`。
+
+runner 必须从独立 PowerShell 进程执行，因为在当前 Codex Agent 进程内重启 Renderer 可能会中断正在执行的操作。不要直接在当前 Agent 进程中执行会重启客户端的 `apply.mjs apply`，也不要使用 `taskkill /IM ChatGPT.exe`，否则可能连 Codex 宿主进程一起终止。
+
+### Windows 更新已有皮肤
+
+保留原来的主题 ID 和目录。让 Codex 生成或接收新的 hero、重新提取主题色，并使用 `--replace` 原子替换完整主题目录，然后重复上面的外部 runner 命令。新主题只有在校验成功后才会替换旧主题，更新失败不会留下半成品。
 
 ## 使用场景
 
@@ -275,6 +325,18 @@ node "$env:USERPROFILE\\.codex\\skills\\codex-skin-studio\\scripts\\persist.mjs"
 
 该命令会创建用户级 `CodexSkinStudio` Task Scheduler 任务，不需要管理员权限，
 也不会修改 ChatGPT 安装目录。
+
+为了保证一次性换肤成功，Windows 推荐使用 Skill 内置的外部 PowerShell runner。
+它必须从独立的 PowerShell 窗口运行，负责关闭旧 Renderer、通过 AUMID 启动官方 Codex / ChatGPT Desktop、等待 `9341` CDP 就绪，再调用 Node 注入主题：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\windows\apply.ps1" `
+  -ThemeDir "C:\absolute\path\to\theme" -Persist
+```
+
+主题生成或更新完成后，Windows 不要在当前 Codex Agent 内直接执行 `apply.mjs apply`。
+runner 返回 `{"status":"applied"}` 后才算换肤成功。
 
 ## 检查与恢复
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
@@ -10,7 +11,8 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const sharp = require("sharp");
+let sharp = null;
+try { sharp = require("sharp"); } catch { /* Optional Pet image processor is bundled with ChatGPT Desktop. */ }
 
 import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
@@ -23,7 +25,7 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const skillRoot = join(repoRoot, "skill/codex-skin-studio");
 const applyScript = join(skillRoot, "scripts/apply.mjs");
 const createThemeScript = join(skillRoot, "scripts/create-theme.mjs");
-const packageScript = join(repoRoot, "scripts/package-codex-skin-studio.command");
+const packageScript = join(repoRoot, "scripts/package-codex-skin-studio.mjs");
 
 const validManifest = {
   schemaVersion: 1,
@@ -402,12 +404,20 @@ test("discovers Microsoft Store ChatGPT package executable candidates", () => {
   assert.deepEqual(candidates, ["C:\\Program Files\\WindowsApps\\OpenAI.ChatGPT\\app\\ChatGPT.exe"]);
 });
 
-test("rejects a hero symlink that resolves outside the theme directory", async () => {
+test("rejects a hero symlink that resolves outside the theme directory", async (t) => {
   await withTempDir("codex-skin-outside-", async (outside) => {
     await writeFile(join(outside, "hero.png"), Buffer.from([1]));
     await withTempDir("codex-skin-theme-", async (root) => {
       await writeFile(join(root, "theme.json"), JSON.stringify({ ...validManifest, hero: "linked/hero.png" }));
-      await symlink(outside, join(root, "linked"));
+      try {
+        await symlink(outside, join(root, "linked"));
+      } catch (error) {
+        if (process.platform === "win32" && ["EPERM", "EACCES"].includes(error.code)) {
+          t.skip("Windows symlink creation requires Developer Mode or elevated privileges");
+          return;
+        }
+        throw error;
+      }
       await assert.rejects(execFileAsync(process.execPath, [applyScript, "validate", root, "--json"]), /hero escapes the theme directory/);
     });
   });
@@ -1292,7 +1302,7 @@ test("resolves Pet roots for macOS and Windows without hard-coded user paths", (
   assert.equal(defaultPetsDir({ platform: "win32", env: { CODEX_HOME: "D:\\Codex" } }), "D:\\Codex\\pets");
 });
 
-test("creates, validates, installs, and reports a deterministic Pet atlas", async () => {
+test("creates, validates, installs, and reports a deterministic Pet atlas", { skip: !sharp && "sharp is unavailable" }, async () => {
   await withTempDir("codex-pet-", async (root) => {
     const frames = await makePetFrames(root);
     const created = await createPet({ id: "test-pet", displayName: "Test Pet", frames, out: join(root, "pet"), contract: observedPetContract });
@@ -1309,7 +1319,7 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", asyn
   });
 });
 
-test("creates and validates a paired theme and Pet bundle", async () => {
+test("creates and validates a paired theme and Pet bundle", { skip: !sharp && "sharp is unavailable" }, async () => {
   await withTempDir("codex-paired-", async (root) => {
     const frames = await makePetFrames(root);
     const pet = await createPet({ id: "paired-demo", displayName: "Paired Demo", frames, out: join(root, "pet"), contract: observedPetContract });
@@ -1325,11 +1335,11 @@ test("creates and validates a paired theme and Pet bundle", async () => {
 });
 
 test("distribution files are English ASCII text and SKILL has valid frontmatter", async () => {
-  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/switch-paired.mjs", "scripts/validate-pet.mjs", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
+  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/switch-paired.mjs", "scripts/validate-pet.mjs", "scripts/windows/apply.ps1", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
   const binaryExpected = ["examples/pets/mascot/spritesheet.webp", "examples/slayers-xellos-night/hero.webp"];
-  assert.deepEqual(await listFiles(skillRoot), [...textExpected, ...binaryExpected].sort((a, b) => a.localeCompare(b)));
+  assert.deepEqual((await listFiles(skillRoot)).map((value) => value.replaceAll("\\", "/")), [...textExpected, ...binaryExpected].sort((a, b) => a.localeCompare(b)));
   const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
-  assert.match(skill, /^---\nname: codex-skin-studio\ndescription: [^\n]+\n---\n/);
+  assert.match(skill, /^---\r?\nname: codex-skin-studio\r?\ndescription: [^\r\n]+\r?\n---\r?\n/);
   assert.match(skill, /invoke `\$imagegen` before creating theme files/);
   assert.match(skill, /native `image_gen` tool/);
   assert.match(skill, /404 Not Found/);
@@ -1364,14 +1374,13 @@ test("distribution files are English ASCII text and SKILL has valid frontmatter"
 });
 
 test("package script creates exactly the new Skill folder contents", async () => {
-  await execFileAsync(packageScript);
+  await execFileAsync(process.execPath, [packageScript]);
   const archive = join(repoRoot, "output/codex-skin-studio.skill");
-  const firstHash = (await execFileAsync("/usr/bin/shasum", ["-a", "256", archive])).stdout.split(" ")[0];
-  await execFileAsync(packageScript);
-  const secondHash = (await execFileAsync("/usr/bin/shasum", ["-a", "256", archive])).stdout.split(" ")[0];
+  const firstHash = createHash("sha256").update(await readFile(archive)).digest("hex");
+  await execFileAsync(process.execPath, [packageScript]);
+  const secondHash = createHash("sha256").update(await readFile(archive)).digest("hex");
   assert.equal(secondHash, firstHash, "packaging should be byte-for-byte deterministic");
-  const { stdout } = await execFileAsync("/usr/bin/unzip", ["-Z1", archive]);
-  const entries = stdout.trim().split("\n").sort();
+  const entries = zipEntries(await readFile(archive));
   const expectedEntries = [
     "codex-skin-studio/",
     "codex-skin-studio/SKILL.md",
@@ -1398,6 +1407,8 @@ test("package script creates exactly the new Skill folder contents", async () =>
     "codex-skin-studio/scripts/paired.mjs",
     "codex-skin-studio/scripts/pet.mjs",
     "codex-skin-studio/scripts/persist.mjs",
+    "codex-skin-studio/scripts/windows/",
+    "codex-skin-studio/scripts/windows/apply.ps1",
     "codex-skin-studio/scripts/switch-paired.mjs",
     "codex-skin-studio/scripts/validate-pet.mjs",
     "codex-skin-studio/templates/",
@@ -1418,4 +1429,22 @@ async function listFiles(root, prefix = "") {
     else result.push(relative);
   }
   return result;
+}
+
+function zipEntries(archive) {
+  const signature = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  const end = archive.lastIndexOf(signature);
+  assert.ok(end >= 0, "ZIP end record is missing");
+  const count = archive.readUInt16LE(end + 10);
+  let offset = archive.readUInt32LE(end + 16);
+  const entries = [];
+  for (let index = 0; index < count; index += 1) {
+    assert.equal(archive.readUInt32LE(offset), 0x02014b50, "ZIP central directory entry is invalid");
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    entries.push(archive.subarray(offset + 46, offset + 46 + nameLength).toString("utf8"));
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries.sort((left, right) => left.localeCompare(right));
 }

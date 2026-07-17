@@ -106,8 +106,19 @@ function windowsQuote(value) {
   return /[\s"]/.test(text) ? `"${text.replaceAll('"', '\\"')}"` : text;
 }
 
-function buildTaskXml({ nodePath = process.execPath, scriptPath = fileURLToPath(import.meta.url), port = PORT, controlPort = CONTROL_PORT } = {}) {
+function powershellQuote(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function windowsUserId() {
+  if (!process.env.USERNAME) return null;
+  return process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME;
+}
+
+function buildTaskXml({ nodePath = process.execPath, scriptPath = fileURLToPath(import.meta.url), port = PORT, controlPort = CONTROL_PORT, userId = null } = {}) {
   const argumentsValue = [scriptPath, "persistence-worker", "--port", String(port), "--control-port", String(controlPort)].map(windowsQuote).join(" ");
+  const principalUser = userId || (process.env.USERDOMAIN && process.env.USERNAME ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : null);
+  const userIdXml = principalUser ? `\n      <UserId>${xml(principalUser)}</UserId>` : "";
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -121,6 +132,7 @@ function buildTaskXml({ nodePath = process.execPath, scriptPath = fileURLToPath(
   </Triggers>
   <Principals>
     <Principal id="Author">
+      ${userIdXml}
       <LogonType>InteractiveToken</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
@@ -133,7 +145,7 @@ function buildTaskXml({ nodePath = process.execPath, scriptPath = fileURLToPath(
     <StartWhenAvailable>true</StartWhenAvailable>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <RestartOnFailure>
-      <Interval>PT10S</Interval>
+      <Interval>PT1M</Interval>
       <Count>3</Count>
     </RestartOnFailure>
   </Settings>
@@ -166,12 +178,35 @@ async function schtasks(args, { ignoreFailure = false } = {}) {
   }
 }
 
+async function powershell(command, { ignoreFailure = false } = {}) {
+  try {
+    return await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { timeout: 10000 });
+  } catch (error) {
+    if (ignoreFailure) return null;
+    throw error;
+  }
+}
+
+async function registerWindowsTask({ nodePath = process.execPath, scriptPath = fileURLToPath(import.meta.url), port = PORT, controlPort = CONTROL_PORT } = {}) {
+  const userId = windowsUserId();
+  if (!userId) throw new Error("the current Windows user could not be resolved");
+  const argumentsValue = [scriptPath, "persistence-worker", "--port", String(port), "--control-port", String(controlPort)].map(windowsQuote).join(" ");
+  const command = [
+    `$action = New-ScheduledTaskAction -Execute ${powershellQuote(nodePath)} -Argument ${powershellQuote(argumentsValue)} -WorkingDirectory ${powershellQuote(dirname(scriptPath))}`,
+    `$trigger = New-ScheduledTaskTrigger -AtLogOn -User ${powershellQuote(userId)}`,
+    `$principal = New-ScheduledTaskPrincipal -UserId ${powershellQuote(userId)} -LogonType Interactive -RunLevel Limited`,
+    "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)",
+    `Register-ScheduledTask -TaskName ${powershellQuote(TASK_NAME)} -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null`,
+  ].join("; ");
+  await powershell(command);
+  return { status: "enabled", taskName: TASK_NAME, taskXmlPath: TASK_XML_PATH, port, controlPort };
+}
+
 async function installPersistence({ port = PORT, controlPort = CONTROL_PORT, nodePath = process.execPath, scriptPath = fileURLToPath(import.meta.url) } = {}) {
   if (platform() === "win32") {
     await mkdir(dirname(TASK_XML_PATH), { recursive: true });
     await writeFile(TASK_XML_PATH, `\ufeff${buildTaskXml({ nodePath, scriptPath, port, controlPort })}`, "utf16le");
-    await schtasks(["/Create", "/TN", TASK_NAME, "/XML", TASK_XML_PATH, "/F"]);
-    return { status: "enabled", taskName: TASK_NAME, taskXmlPath: TASK_XML_PATH, port, controlPort };
+    return registerWindowsTask({ nodePath, scriptPath, port, controlPort });
   }
   if (platform() !== "darwin") throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
   await mkdir(dirname(PLIST_PATH), { recursive: true });
@@ -185,7 +220,7 @@ async function installPersistence({ port = PORT, controlPort = CONTROL_PORT, nod
 
 async function uninstallPersistence() {
   if (platform() === "win32") {
-    await schtasks(["/Delete", "/TN", TASK_NAME, "/F"], { ignoreFailure: true });
+    await powershell(`Unregister-ScheduledTask -TaskName ${powershellQuote(TASK_NAME)} -Confirm:$false -ErrorAction SilentlyContinue`, { ignoreFailure: true });
     await rm(TASK_XML_PATH, { force: true });
     return { status: "disabled", taskName: TASK_NAME, taskXmlPath: TASK_XML_PATH };
   }

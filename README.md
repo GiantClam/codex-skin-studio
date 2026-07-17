@@ -8,7 +8,17 @@ This repository contains the `codex-skin-studio` Codex Skill and its lightweight
 
 This project uses [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) as a research and design reference. It is an independent lightweight implementation, not a complete fork with modifications, and does not claim feature parity. The current scope is a Codex Skill plus a lightweight local runtime; a dedicated skin website is planned as a separate expansion.
 
-The current application is ChatGPT Desktop. macOS identifies it with bundle identifier `com.openai.codex`; Windows uses the ChatGPT executable.
+The current application is ChatGPT Desktop. macOS identifies it with bundle identifier `com.openai.codex`. Windows supports the official standalone Codex / ChatGPT Desktop client, including Microsoft Store (MSIX) and conventional executable installs; the runtime discovers the installed app instead of using a user-specific path.
+
+## Windows Support
+
+Windows Codex / ChatGPT Desktop skinning is supported end to end. The runtime
+discovers the official app, starts the MSIX package through its AUMID when
+needed, opens loopback CDP on `127.0.0.1:9341`, injects the validated theme, and
+can restore it after login, app launch, or renderer reload through the
+user-level `CodexSkinStudio` Task Scheduler task. It does not modify `app.asar`,
+signatures, binaries, or official JavaScript, and does not require administrator
+privileges.
 
 ## Highlights
 
@@ -21,6 +31,7 @@ The current application is ChatGPT Desktop. macOS identifies it with bundle iden
 - Scoped CSS injection that replaces only the top workspace label and preserves project session controls and account controls.
 - Local-only CDP communication on `127.0.0.1`.
 - Optional macOS LaunchAgent or Windows Task Scheduler persistence for login, app launch, and renderer reload recovery.
+- Official Windows standalone Codex / ChatGPT Desktop support for MSIX and executable installs.
 - Upper-right `Skins` switcher for selecting any valid locally generated theme without leaving the conversation.
 - The `Skins` menu refreshes valid local themes on open and in the background, so newly created themes appear without restarting ChatGPT Desktop.
 - Oversized raster Heroes are decoded and compressed to a smaller WebP data URL before CSS injection, avoiding stylesheet limits that can silently drop the background rule.
@@ -87,7 +98,9 @@ skill/codex-skin-studio/
 │   ├── paired-status.mjs
 │   ├── paired.mjs
 │   ├── pet.mjs
-│   └── persist.mjs
+│   ├── persist.mjs
+│   └── windows/
+│       └── apply.ps1
 ├── templates/
 │   ├── pet-contract.json
 │   ├── pet.json
@@ -100,6 +113,7 @@ skill/codex-skin-studio/
         └── theme.json
 
 scripts/
+├── package-codex-skin-studio.mjs
 └── package-codex-skin-studio.command
 
 test/
@@ -138,6 +152,67 @@ rsync -a --delete skill/codex-skin-studio/ "$HOME/.codex/skills/codex-skin-studi
 ```
 
 Skill installation copies files only. It does not start a background process. Persistence starts automatically during the first explicit apply flow, after a theme has been selected.
+
+### Windows: First Installation And One-Shot Apply
+
+After installing the Skill package, use this sequence for an official
+standalone Windows Codex / ChatGPT Desktop client:
+
+1. Confirm that the official desktop app is installed and that `node` is
+   available in PowerShell. The runner discovers both MSIX and conventional
+   installs; do not hard-code `C:\Users\...` or `WindowsApps` paths.
+2. Send Codex one complete request, for example:
+
+   ```text
+   Create and apply a dark cyberpunk ChatGPT Desktop skin. Generate and inspect the hero, create or replace the complete theme directory, enable persistence, provide the external Windows PowerShell runner command, and confirm active status.
+   ```
+
+3. Let the Skill finish native image generation, hero inspection, `theme.json`,
+   local asset creation, and validation. For a direct local background, provide
+   a non-empty PNG, JPEG, or WebP file instead of generating an image.
+4. Copy the exact theme directory reported by the Skill into the runner command
+   below and execute it from a separate PowerShell window:
+
+   ```powershell
+   $theme = "$env:APPDATA\CodexSkinStudio\themes\my-theme"
+   powershell -NoProfile -ExecutionPolicy Bypass -File `
+     "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\windows\apply.ps1" `
+     -ThemeDir $theme -Persist
+   ```
+
+The runner validates the theme, gracefully closes the current app when needed,
+starts the official MSIX app through AUMID or the discovered executable, waits
+for CDP, applies the theme, and installs persistence when `-Persist` is present.
+It is intentionally external to the Codex renderer because restarting the
+renderer from inside the current Agent process can terminate the operation.
+
+Success requires the runner to return:
+
+```json
+{"status":"applied"}
+```
+
+Verify the live result from PowerShell:
+
+```powershell
+node "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\apply.mjs" status --json
+node "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\persist.mjs" status --json
+```
+
+The first command must report `status: "active"`, with the expected theme ID,
+`connected: true`, and `heroLoaded: true`. The second should report
+`status: "enabled"` and `running: true` when persistence is enabled.
+
+### Windows: Update An Existing Skin
+
+Keep the same theme ID and directory. Ask Codex to generate or accept the new
+hero, derive new colors, and replace the complete theme directory with
+`--replace`. Then run the same external runner command. The creator writes to a
+temporary directory and atomically replaces the old theme only after validation,
+so a failed update does not leave a partially written theme.
+
+Do not run a restart-capable `apply.mjs apply` inside the Codex Agent process.
+Do not use `taskkill /IM ChatGPT.exe`, which can terminate the host process.
 
 ## User Workflows
 
@@ -300,6 +375,18 @@ node "$env:USERPROFILE\\.codex\\skills\\codex-skin-studio\\scripts\\persist.mjs"
 
 This creates the user-level `CodexSkinStudio` Task Scheduler task. It does not
 require administrator privileges and does not modify the ChatGPT installation.
+
+For one-shot Windows creation or updates, run the external PowerShell runner
+from a separate PowerShell process after the theme directory exists:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  "$env:USERPROFILE\.codex\skills\codex-skin-studio\scripts\windows\apply.ps1" `
+  -ThemeDir "C:\absolute\path\to\theme" -Persist
+```
+
+The runner validates the theme, starts the MSIX app through its AUMID when
+needed, waits for loopback CDP, and only reports success after `applied`.
 
 ## Inspect And Restore
 

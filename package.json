@@ -6,6 +6,6 @@
   "scripts": {
     "test": "node --test test/codex-skin-studio-mvp.test.mjs",
     "test:codex-skin-studio": "node --test test/codex-skin-studio-mvp.test.mjs",
-    "package:codex-skin-studio": "scripts/package-codex-skin-studio.command"
+    "package:codex-skin-studio": "node scripts/package-codex-skin-studio.mjs"
   }
 }

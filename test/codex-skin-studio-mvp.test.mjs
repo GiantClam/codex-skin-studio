@@ -1371,7 +1371,9 @@ test("uses visible ChatGPT Desktop Pets controls instead of private app state", 
   assert.match(buildMacOpenSettingsScript(), /Settings/);
   assert.match(buildWindowsOpenSettingsScript(), /SendKeys\('\^,'\)/);
   assert.match(OPEN_PETS_PANEL_EXPRESSION, /data-settings-panel-slug=\\?\"pets/);
-  assert.match(REFRESH_PETS_EXPRESSION, /button\[aria-label\]/);
+  assert.match(OPEN_PETS_PANEL_EXPRESSION, /data-settings-panel-slug=\\?\"appearance/);
+  assert.match(REFRESH_PETS_EXPRESSION, /button,\[role=\\?\"button/);
+  assert.match(REFRESH_PETS_EXPRESSION, /custom\\s/);
   assert.match(selectPetExpression("paired-demo"), /custom:paired-demo/);
   assert.match(petSelectionStateExpression("paired-demo"), /已选/);
   assert.match(petSelectionStateExpression("paired-demo"), /assetLoaded/);

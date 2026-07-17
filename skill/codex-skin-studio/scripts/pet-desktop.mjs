@@ -45,13 +45,13 @@ function commandFailure(error, fallback = "PET_NATIVE_UI_UNAVAILABLE") {
 
 export const PET_UI_STATE_EXPRESSION = `(() => ({
   settings: Boolean(document.querySelector('[data-settings-panel-slug]')),
-  petsPanel: Boolean(document.querySelector('[data-settings-panel-slug="pets"][aria-current="page"]')),
+  petsPanel: Boolean(document.querySelector('[data-settings-panel-slug="pets"][aria-current="page"]') || [...document.querySelectorAll('button,[role="button"]')].some((node) => /refresh\\s+(custom\\s+)?pets?|custom\\s+pets?/i.test((node.getAttribute('aria-label') || '') + ' ' + (node.textContent || '')))),
   customPetIds: [...document.querySelectorAll('[data-avatar-id^="custom:"]')].map((node) => node.getAttribute('data-avatar-id').slice(7)),
   main: (() => { const probe = ${MAIN_TARGET_PROBE}; return Boolean(probe.main && probe.root); })()
 }))()`;
 
 export const OPEN_PETS_PANEL_EXPRESSION = `(() => {
-  const button = document.querySelector('[data-settings-panel-slug="pets"]');
+  const button = document.querySelector('[data-settings-panel-slug="pets"], [data-settings-panel-slug="appearance"]');
   if (!button) return { ok: false, reason: "pets-settings-button-not-found" };
   button.click();
   return { ok: true };
@@ -59,7 +59,10 @@ export const OPEN_PETS_PANEL_EXPRESSION = `(() => {
 
 export const REFRESH_PETS_EXPRESSION = `(() => {
   const labels = ${json([...REFRESH_LABELS])};
-  const button = [...document.querySelectorAll('button[aria-label]')].find((candidate) => labels.includes((candidate.getAttribute('aria-label') || '').trim().toLowerCase()));
+  const button = [...document.querySelectorAll('button,[role="button"]')].find((candidate) => {
+    const value = ((candidate.getAttribute('aria-label') || '') + ' ' + (candidate.textContent || '')).replace(/\\s+/g, ' ').trim().toLowerCase();
+    return labels.includes(value) || (value.includes('refresh') && /(custom\\s+)?pets?|avatars?/.test(value));
+  });
   if (!button) return { ok: false, reason: "refresh-button-not-found" };
   button.click();
   return { ok: true };
@@ -71,7 +74,7 @@ export function selectPetExpression(petId) {
   return `(() => {
     const avatar = document.querySelector(${JSON.stringify(selector)});
     if (!avatar) return { ok: false, reason: "pet-not-found" };
-    let row = avatar.closest('.flex.items-center.justify-between');
+    let row = avatar.closest('[role="listitem"], .flex.items-center.justify-between');
     if (!row) row = avatar.parentElement?.parentElement?.parentElement || null;
     if (!row) return { ok: false, reason: "pet-row-not-found" };
     const labels = ${json([...SELECT_LABELS])};
@@ -88,7 +91,7 @@ export function petSelectionStateExpression(petId) {
   const selector = `[data-avatar-id="custom:${petId}"]`;
   return `(() => {
     const avatar = document.querySelector(${JSON.stringify(selector)});
-    const row = avatar?.closest('.flex.items-center.justify-between') || null;
+    const row = avatar?.closest('[role="listitem"], .flex.items-center.justify-between') || null;
     const preview = avatar?.querySelector('[data-testid="codex-avatar"]') || null;
     const selected = ${json([...SELECTED_LABELS])};
     const rowText = (row?.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();

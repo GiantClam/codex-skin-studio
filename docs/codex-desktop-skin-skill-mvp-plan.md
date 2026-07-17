@@ -8,7 +8,7 @@
 
 > 命名说明：当前产品名为 ChatGPT Desktop，技术 bundle ID 仍为 `com.openai.codex`。`/Applications/ChatGPT.app` 是规范路径，`/Applications/Codex.app` 仅作为旧命名兼容路径保留。
 >
-> 文档说明：本文保留上游完整产品的研究基线和历史路径引用；当前可运行实现已收敛到 `skill/codex-skin-studio/`，仓库不再包含上游 `src/`、预设主题、custom-pet 或旧 CLI。
+> 文档说明：本文保留上游完整产品的研究基线和历史路径引用；当前可运行实现已收敛到 `skill/codex-skin-studio/`，仓库不再包含上游 `src/`、预设主题、custom-pet 或旧 CLI。Pet 作为独立扩展，见 [`docs/codex-pet-skill-plan.md`](codex-pet-skill-plan.md)。
 
 ## 1. 结论
 

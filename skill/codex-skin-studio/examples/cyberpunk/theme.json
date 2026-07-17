@@ -3,6 +3,9 @@
   "id": "cyberpunk-night",
   "name": "Cyberpunk Night",
   "hero": "hero.png",
+  "copy": {
+    "brand": "CYBERPUNK // NIGHT"
+  },
   "colors": {
     "accent": "#25D9FF",
     "secondary": "#FF5CC8",

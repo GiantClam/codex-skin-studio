@@ -292,6 +292,20 @@ test("creates a complete theme directory in one deterministic command", async ()
   });
 });
 
+test("defaults the generated brand label to the theme name without a logo", async () => {
+  await withTempDir("codex-skin-default-brand-", async (root) => {
+    const themeDir = join(root, "theme");
+    const hero = join(root, "source.webp");
+    await writeFile(hero, await readFile(join(skillRoot, "examples/slayers-xellos-night/hero.webp")));
+    const { stdout } = await execFileAsync(process.execPath, [createThemeScript,
+      "--id", "default-brand", "--name", "Patriot Gold Workbench", "--out", themeDir,
+      "--hero", hero,
+      "--accent", "#D9A441", "--secondary", "#B5312B", "--surface", "#050D20", "--text", "#FFFFFF",
+    ]);
+    assert.deepEqual(JSON.parse(stdout).manifest.copy, { brand: "Patriot Gold Workbench" });
+  });
+});
+
 test("builds an opt-in launch agent that keeps the renderer debuggable", () => {
   const plist = buildPlist({ nodePath: "/usr/local/bin/node", scriptPath: "/tmp/apply.mjs", port: 9341 });
   assert.match(plist, /com\.openai\.chatgpt\.codex-skin-studio/);

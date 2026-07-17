@@ -16,6 +16,7 @@
 - 支持图生皮肤：直接使用背景、指定人物或物体保真合成、风格参考图、多图组合。
 - 固化五区视觉契约，保证侧栏、聊天区、输入框和主体空间可用。
 - 一次性生成 `hero`、`theme.json`、可选 Logo、可选肖像卡和品牌文案。
+- 未提供 Logo 或显式品牌名时，自动使用主题名称生成左侧导航品牌名，并应用花式文字样式。
 - 品牌名只替换顶部 workspace label，不误伤项目 Session 和账户区域。
 - 只通过 `127.0.0.1` 本机 CDP 通信。
 - 可选 macOS LaunchAgent 或 Windows Task Scheduler，自动处理登录、应用启动和 Renderer 重载。
@@ -219,7 +220,7 @@ node "$HOME/.codex/skills/codex-skin-studio/scripts/persist.mjs" install --json
 }
 ```
 
-当前 Skill 工作流要求 `schemaVersion`、`id`、`name`、`hero` 和四个主题色。`logo` 用经过授权的本地图片替换顶部 workspace label；没有 Logo 时，`copy.brand` 使用受限 CSS 替换品牌名。`headline` 和 `tagline` 只有显式提供时才生成右侧信息卡。`polaroid` 是右下角不可交互的次要肖像卡。
+当前 Skill 工作流要求 `schemaVersion`、`id`、`name`、`hero` 和四个主题色。`logo` 用经过授权的本地图片替换顶部 workspace label；没有 Logo 时，`copy.brand` 使用受限 CSS 替换品牌名，`create-theme.mjs` 默认使用主题名称，也可以用 `--brand` 覆盖。`headline` 和 `tagline` 只有显式提供时才生成右侧信息卡。`polaroid` 是右下角不可交互的次要肖像卡。
 
 当前运行时支持 PNG、JPEG 和 WebP。GIF 与视频背景尚未在 MVP 中启用，因为它们需要额外的动画生命周期、播放状态、性能和重载验证。
 

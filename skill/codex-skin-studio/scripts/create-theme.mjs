@@ -44,11 +44,14 @@ function required(values, key) {
   return value.trim();
 }
 
-function optionalCopy(values) {
+function optionalCopy(values, defaultBrand = null) {
   const copy = {};
+  const brand = values.get("brand");
+  if (brand !== undefined) copy.brand = String(brand).trim();
+  else if (defaultBrand) copy.brand = defaultBrand;
   for (const key of ["brand", "headline", "tagline"]) {
     const value = values.get(key);
-    if (value !== undefined) copy[key] = String(value).trim();
+    if (key !== "brand" && value !== undefined) copy[key] = String(value).trim();
   }
   return Object.keys(copy).length ? copy : undefined;
 }
@@ -132,6 +135,7 @@ async function createTheme(values) {
   }
 
   const colors = Object.fromEntries(REQUIRED_COLORS.map((key) => [key, required(values, key)]));
+  const copy = optionalCopy(values, assets.logo ? null : name);
   const manifest = validateManifest({
     schemaVersion: 1,
     id,
@@ -139,7 +143,7 @@ async function createTheme(values) {
     hero: assetName("hero"),
     ...(assets.logo ? { logo: assetName("logo") } : {}),
     ...(assets.polaroid ? { polaroid: assetName("polaroid") } : {}),
-    ...(optionalCopy(values) ? { copy: optionalCopy(values) } : {}),
+    ...(copy ? { copy } : {}),
     colors,
   });
 

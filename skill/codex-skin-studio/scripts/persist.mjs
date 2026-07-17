@@ -249,18 +249,20 @@ async function requestBody(request, maxBytes = 4096) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function createControlServer({ cdpPort = PORT, listThemesFn = listThemes, applyThemeFn = commandApply } = {}) {
+function createControlServer({ cdpPort = PORT, listThemesFn = listThemes, applyThemeFn = commandApply, applyLock = null } = {}) {
   let applying = false;
   const applyThemeId = async (id) => {
-    if (applying) throw new Error("another skin is being applied");
-    const themes = await listThemesFn();
-    const theme = themes.find((item) => item.id === id);
-    if (!theme) throw new Error("local theme was not found");
+    if (applying || applyLock?.active) throw new Error("another skin is being applied");
     applying = true;
+    if (applyLock) applyLock.active = true;
     try {
+      const themes = await listThemesFn();
+      const theme = themes.find((item) => item.id === id);
+      if (!theme) throw new Error("local theme was not found");
       return await applyThemeFn(theme.themeDir, cdpPort);
     } finally {
       applying = false;
+      if (applyLock) applyLock.active = false;
     }
   };
   return createServer(async (request, response) => {
@@ -306,10 +308,16 @@ async function quitChatGPT(info, pids) {
 
 async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, pollMs = 1500, normalLaunchGraceMs = 5000, launchFn = launchDebug, quitFn = quitChatGPT, startControlServerFn = startControlServer } = {}) {
   if (!isSupportedPlatform(platform())) throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
-  await startControlServerFn({ port: controlPort, cdpPort: port });
+  const applyLock = { active: false };
+  await startControlServerFn({ port: controlPort, cdpPort: port, applyLock });
   let noCdpSince = 0;
   while (true) {
     try {
+      if (applyLock.active) {
+        noCdpSince = 0;
+        await delay(pollMs);
+        continue;
+      }
       const state = await readState();
       if (!state?.themeDir || typeof state.themeId !== "string") {
         noCdpSince = 0;
@@ -317,14 +325,29 @@ async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, poll
         continue;
       }
       const list = await targets(port).catch(() => []);
+      if (applyLock.active) {
+        noCdpSince = 0;
+        await delay(pollMs);
+        continue;
+      }
       if (list.length) {
         const main = await selectMainTarget(list, undefined, { allowTransient: true });
         if (main) {
           const live = (await evaluateAll([main], STATUS_EXPRESSION))[0];
           if (!injectionVerified(live, state.themeId, state.assetFlags)) {
-            const saved = await savedTheme(state);
-            await injectTheme(list, saved);
-            await writeState({ ...state, active: true, restartPending: false, restartWorkerPid: null, reappliedAt: new Date().toISOString() });
+            if (applyLock.active) {
+              noCdpSince = 0;
+              await delay(pollMs);
+              continue;
+            }
+            applyLock.active = true;
+            try {
+              const saved = await savedTheme(state);
+              await injectTheme(list, saved);
+              await writeState({ ...state, active: true, restartPending: false, restartWorkerPid: null, reappliedAt: new Date().toISOString() });
+            } finally {
+              applyLock.active = false;
+            }
           }
         }
         noCdpSince = 0;

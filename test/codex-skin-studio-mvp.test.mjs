@@ -172,6 +172,35 @@ test("parses the local switcher control port and exposes a loopback control serv
   assert.deepEqual(applied, [{ themeDir: "/tmp/miku", port: 9341 }, { themeDir: "/tmp/miku", port: 9341 }]);
 });
 
+test("serializes control-server skin applications with the shared apply lock", async (t) => {
+  let started;
+  const applyStarted = new Promise((resolve) => { started = resolve; });
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const applyLock = { active: false };
+  const server = createControlServer({
+    applyLock,
+    listThemesFn: async () => [{ id: "miku", name: "Miku", themeDir: "/tmp/miku", colors: validManifest.colors }],
+    applyThemeFn: async () => {
+      started();
+      await pending;
+      return { status: "applied", themeId: "miku" };
+    },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const first = fetch(`${base}/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "miku" }) });
+  await applyStarted;
+  assert.equal(applyLock.active, true);
+  const second = await fetch(`${base}/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "miku" }) });
+  assert.equal(second.status, 400);
+  assert.deepEqual(await second.json(), { status: "failed", message: "another skin is being applied" });
+  release();
+  assert.deepEqual(await (await first).json(), { status: "applied", themeId: "miku" });
+  assert.equal(applyLock.active, false);
+});
+
 test("emits optional brand logo and polaroid asset layers", () => {
   const value = css(validManifest, "data:image/png;base64,AA", "data:image/png;base64,LOGO", "data:image/png;base64,POLAROID");
   assert.match(value, /nav > div:first-child > div:first-child > button\[aria-haspopup="menu"\]/);

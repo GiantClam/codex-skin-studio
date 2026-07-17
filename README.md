@@ -59,6 +59,8 @@ The switcher can be dragged within the conversation viewport. A normal click ope
 The switcher reads the current theme list from the loopback `/themes` endpoint
 when opened and periodically while mounted. If the persistence worker is
 temporarily unavailable, it keeps the last injected list as a fallback.
+Theme application is serialized inside the persistence worker so a background
+renderer-recovery pass cannot race a manual switch.
 
 ## Repository Layout
 

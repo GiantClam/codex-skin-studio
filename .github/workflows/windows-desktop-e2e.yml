@@ -17,23 +17,9 @@ jobs:
         shell: pwsh
         run: |
           winget install --id=9NT1R1C2HH7J --source=msstore --accept-package-agreements --accept-source-agreements --silent
-          Get-Process -Name ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          $packages = @(Get-AppxPackage | Where-Object { $_.Name -match 'ChatGPT|OpenAI' })
-          $candidates = @()
-          foreach ($package in $packages) {
-            $candidates += Join-Path $package.InstallLocation 'ChatGPT.exe'
-            $candidates += Join-Path $package.InstallLocation 'app\ChatGPT.exe'
-          }
-          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $exe) { throw 'ChatGPT.exe was not found in the installed Microsoft Store package' }
-          Start-Process -FilePath $exe -ArgumentList '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=9341'
-          $deadline = (Get-Date).AddSeconds(90)
-          do {
-            Start-Sleep -Seconds 2
-            try { $targets = Invoke-RestMethod -Uri 'http://127.0.0.1:9341/json/list' -TimeoutSec 3 } catch { $targets = $null }
-          } while (-not $targets -and (Get-Date) -lt $deadline)
-          if (-not $targets) { Get-Process -Name ChatGPT -ErrorAction SilentlyContinue | Format-List *; throw 'ChatGPT Desktop did not expose the loopback CDP endpoint' }
-          Write-Host ("CDP targets: " + ($targets | ConvertTo-Json -Compress))
+          powershell -NoProfile -ExecutionPolicy Bypass -File `
+            'skill\codex-skin-studio\scripts\windows\apply.ps1' `
+            -ThemeDir 'skill\codex-skin-studio\examples\slayers-xellos-night' -Force
       - name: Install the example Pet
         shell: pwsh
         run: |

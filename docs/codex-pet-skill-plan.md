@@ -1,10 +1,68 @@
 # ChatGPT Desktop Codex Pet Skill 方案
 
-> 状态：独立扩展设计稿
+> 状态：MVP 实施规格；必须先完成 P0 官方契约冻结，再进入 P1 编码
 > 研究日期：2026-07-17
 > 目标平台：ChatGPT Desktop macOS 和 Windows
 > 关联项目：`codex-skin-studio`
 > 产品边界：Pet 是独立的浮动 Overlay，不是主窗口 CSS 皮肤，也不是 `app.asar` 修改方案。
+
+> 重要说明：本文同时记录已确认的产品决策和待 P0 实测的应用契约。任何未被真实 `hatch-pet` 输出或 ChatGPT Desktop Refresh 验证的字段、行映射和尺寸，都不能作为安装器的硬编码依据。
+
+## 0. 实施标准和完成定义
+
+### 0.1 MVP 范围
+
+本 MVP 只交付一个可重复执行的 Pet 生成和安装流程：
+
+```text
+参考图或文字需求
+  -> Codex Agent 分析主体和风格
+  -> Codex 原生 Image Generation 生成角色基准图和动作素材
+  -> 本地脚本生成 8 × 9 图集
+  -> 本地脚本验证图集和 manifest
+  -> 原子安装到用户 Pet 目录
+  -> 用户在 ChatGPT Desktop Pets 设置中 Refresh 并选择
+```
+
+MVP 必须完成：
+
+- 一个英文 `SKILL.md` Pet 工作流；
+- 一个可复现的图集组装命令；
+- 一个只读验证命令；
+- 一个带回滚的安装命令；
+- 一个可安装的真实示例 Pet；
+- macOS 和 Windows 的路径、错误和安装测试；
+- 一次真实 ChatGPT Desktop Refresh、选择和 `/pet` 唤醒验证。
+
+MVP 不包含：
+
+- 自动切换不同 Pet 包；
+- 修改 ChatGPT Desktop 应用包或签名；
+- 外部图片服务或独立网站；
+- 自动控制 Pet Overlay 的 CDP 注入；
+- 未经官方契约确认的自定义动画事件编排。
+
+### 0.2 三层职责
+
+| 层 | 负责内容 | 不负责内容 |
+| --- | --- | --- |
+| Codex Agent / Skill | 需求解析、图片角色分类、Prompt、调用原生 Image Generation、Vision 复核 | 直接写入 Pet 目录、假设生成成功 |
+| 本地 Node.js 工具 | 去背景、缩放、基线、图集、manifest、验证、原子安装 | 调用 Image Generation、替代 Vision 判断 |
+| ChatGPT Desktop | Pet Overlay、任务状态、动画播放、Refresh 和选择 | 接受未经验证的图集、提供稳定的第三方动画 API |
+
+### 0.3 Definition of Done
+
+只有同时满足以下条件，才允许报告“Pet Skill MVP 完成”：
+
+1. P0 契约记录已提交，包含实际版本、真实 `pet.json`、图集尺寸、列数、行数、行语义和 Refresh 结果。
+2. `create-pet.mjs`、`validate-pet.mjs`、`install-pet.mjs` 已实现，并且不依赖用户手工移动文件。
+3. 失败的验证或安装不会改变已有 Pet。
+4. 一个真实 Pet 在 macOS ChatGPT Desktop 上可 Refresh、选择并显示动画。
+5. Windows 路径和安装流程通过自动化测试；至少完成一次 Windows 手工验证。
+6. 生成失败、契约不匹配、透明度失败和应用 Refresh 失败均有明确错误信息。
+7. 所有分发的 `SKILL.md`、脚本、模板、示例 manifest 和日志均为英文 ASCII。
+
+未满足上述条件时，状态只能写为 `design`、`contract-pending` 或 `implementation-in-progress`，不能写为 `ready` 或 `installed`。
 
 ## 1. 结论
 
@@ -220,7 +278,7 @@ Codex Image Generation
 └── spritesheet.webp
 ```
 
-最低 manifest 示例：
+以下 manifest 只是设计占位，不能在 P0 契约冻结前视为已验证格式：
 
 ```json
 {
@@ -232,6 +290,95 @@ Codex Image Generation
 ```
 
 MVP 不应自行添加未经当前应用验证的 `animation`、`chains` 或事件字段。社区已有提案希望让这些字段可配置，但当前应用仍主要负责动画行和事件映射。[OpenAI Codex Issue #20863](https://github.com/openai/codex/issues/20863)
+
+### 5.1 P0 官方契约冻结
+
+在编写安装器之前，必须通过当前 ChatGPT Desktop 和官方 `hatch-pet` Skill 取得一份真实样例。P0 产物保存为内部开发记录，不上传用户参考图或生成中间图：
+
+```text
+docs/pet-contract/<observed-version>/
+├── contract.json
+├── pet.json.example
+└── README.md
+```
+
+`contract.json` 至少记录：
+
+- ChatGPT Desktop 版本和平台；
+- `hatch-pet` Skill 版本或生成日期；
+- manifest 实际必需字段和允许字段；
+- spritesheet 文件格式、色彩模式和 alpha 行为；
+- 列数、行数、单帧宽高和总图尺寸；
+- 每一行的实际动画语义、方向和帧数；
+- Refresh 后显示名称、缩略图和 `/pet` 运行结果；
+- 失败时的原始错误和恢复步骤。
+
+安装器只能读取已冻结契约中的字段。若当前应用输出的格式不是 8 列 × 9 行，工具必须报告 `PET_CONTRACT_MISMATCH`，不能通过“仍然可被 8 和 9 整除”来假装兼容。
+
+### 5.2 跨平台目录和路径
+
+逻辑 Pet 根目录统一命名为 `CODEX_PETS_DIR`，默认值为：
+
+```text
+macOS:  $CODEX_HOME/pets 或 $HOME/.codex/pets
+Windows: %CODEX_HOME%\\pets 或 %USERPROFILE%\\.codex\\pets
+```
+
+实现要求：
+
+- 使用 Node.js `path` 和 `os.homedir()`，禁止拼接 `/` 或硬编码用户名；
+- 允许 `--pets-dir` 覆盖默认目录，便于测试和用户迁移；
+- 使用 `path.resolve` 后确认目标目录位于 Pet 根目录内；
+- 不跟随指向 Pet 根目录外部的符号链接；
+- Windows 安装必须支持空格路径和 Unicode 用户名；
+- 输出 JSON 时使用绝对路径，日志中的路径按当前平台格式输出。
+
+### 5.3 MVP 命令接口
+
+脚本必须支持稳定的 JSON 输出，供 Skill 和测试读取。命令失败时使用非零退出码，并在 JSON 中返回稳定 `code`：
+
+```bash
+node scripts/create-pet.mjs \
+  --id "pet-id" \
+  --name "Pet Name" \
+  --frames "/absolute/path/to/frames" \
+  --out "/absolute/path/to/pet-id" \
+  --contract "/absolute/path/to/contract.json" \
+  --json
+
+node scripts/validate-pet.mjs \
+  "/absolute/path/to/pet-id" \
+  --contract "/absolute/path/to/contract.json" \
+  --json
+
+node scripts/install-pet.mjs \
+  "/absolute/path/to/pet-id" \
+  --pets-dir "/absolute/path/to/pets" \
+  --contract "/absolute/path/to/contract.json" \
+  --json
+```
+
+命令契约：
+
+- `create` 只生成临时输出，不写入用户 Pet 根目录；
+- `validate` 只读，不修改输入目录；
+- `install` 必须先完整执行 `validate`，再原子替换目标目录；
+- `--dry-run` 只允许在 `validate` 和 `install` 上使用；
+- 缺少输入、契约不匹配、图片解码失败、alpha 失败和路径越界必须返回稳定错误码；
+- 默认不覆盖同 ID Pet，只有显式 `--replace` 才允许替换。
+
+建议错误码：
+
+```text
+PET_INPUT_INVALID
+PET_CONTRACT_MISMATCH
+PET_IMAGE_INVALID
+PET_ALPHA_INVALID
+PET_SPRITESHEET_INVALID
+PET_MANIFEST_INVALID
+PET_PATH_UNSAFE
+PET_INSTALL_FAILED
+```
 
 ## 6. 建议的 Skill 文件结构
 
@@ -250,6 +397,33 @@ skill/codex-skin-studio/
             └── pet.json
 ```
 
+### 6.1 处理依赖和输入布局
+
+图像处理统一使用 `sharp`，作为 Pet 扩展的显式运行时依赖。不得依赖 macOS `sips`、Windows 画图工具或用户本机的其他图像软件，否则无法保证跨平台结果一致。
+
+动作输入必须使用机器可读的布局 manifest，而不是依赖文件名猜测：
+
+```json
+{
+  "contractVersion": "observed-version",
+  "canvas": { "width": 192, "height": 208 },
+  "rows": {
+    "idle": { "row": 0, "frames": ["idle-00.png", "idle-01.png"] },
+    "running": { "row": 1, "frames": ["running-00.png", "running-01.png"] }
+  }
+}
+```
+
+此输入 manifest 由 `create-pet.mjs` 消费，不等同于 ChatGPT Desktop 的 `pet.json`。真实行号、帧数和画布尺寸必须来自 P0 契约；示例数值仅用于说明格式，不能直接复制到生产 Pet。
+
+使用 `sharp` 时必须：
+
+- 固定解码、缩放、合成和 WebP 编码选项；
+- 统一输出 RGBA，禁止丢失 alpha；
+- 记录源图片哈希和最终图集哈希，便于复现；
+- 限制单帧像素、总文件大小和输入数量，避免异常大图耗尽内存；
+- 生成后重新解码最终 WebP，再执行验证，不能只验证编码前 buffer。
+
 ### `create-pet.mjs`
 
 负责将已确认的动作素材组装成完整 Pet：
@@ -260,6 +434,8 @@ skill/codex-skin-studio/
 - 写入 `pet.json`；
 - 输出 contact sheet；
 - 不调用外部网络服务。
+
+它必须在临时目录完成全部写入，只有验证通过后才移动到 `--out`。任何一步失败都删除临时目录，不留下半成品。
 
 ### `validate-pet.mjs`
 
@@ -275,6 +451,11 @@ skill/codex-skin-studio/
 - 四角透明；
 - 帧间头身比例和脚底基线稳定。
 
+验证分为两层：
+
+1. **机器验证**：文件、路径、尺寸、alpha、边界、契约版本、哈希和大小限制。
+2. **Vision 验证**：卡通化、拟人化、大头小身体、角色一致性、表情可读性和绿边。机器验证通过不代表视觉验收通过。
+
 ### `install-pet.mjs`
 
 负责：
@@ -284,6 +465,19 @@ skill/codex-skin-studio/
 - 失败时回滚旧版本；
 - 输出安装目录和 manifest；
 - 提示用户在 ChatGPT Desktop 的 Pets 设置中 Refresh。
+
+安装事务必须遵循：
+
+```text
+validate source
+  -> copy source to sibling temporary directory
+  -> rename existing target to backup
+  -> rename temporary directory to target
+  -> fsync/close handles where supported
+  -> remove backup only after success
+```
+
+任何 rename、权限或磁盘空间错误都必须恢复旧目录，并返回 `PET_INSTALL_FAILED`。安装器不得删除用户 Pet 根目录中的其他 ID。
 
 ## 7. 用户体验
 
@@ -311,13 +505,33 @@ Skill 必须报告：
 - 安装路径；
 - 是否需要 Refresh 或重启。
 
+每个阶段必须产生可审计结果：
+
+```text
+analyze     -> input-roles.json
+generate    -> reference image paths and action image paths
+assemble    -> spritesheet.webp + contact-sheet.webp
+validate    -> validation.json
+install     -> install.json
+```
+
+中间结果默认保存到临时工作目录，不复制到 Pet 安装目录。生成、拼图或安装失败时，报告最后一个成功阶段、稳定错误码和用户可执行的恢复动作。
+
+Skill 不得把“图片已生成”推断为“Pet 已安装”，也不得把“文件已复制”推断为“ChatGPT Desktop 已显示”。最终状态必须区分：
+
+```text
+generated -> assembled -> validated -> installed -> refreshed -> selected -> running
+```
+
 ## 8. 自动切换边界
 
 ### 8.1 MVP 支持
 
-- 同一个 Pet 内部根据 ChatGPT 任务状态自动切换动画；
-- Pet 在 Running、Waiting、Review、Failed 等状态之间切换对应帧；
+- 同一个 Pet 内部由 ChatGPT Desktop 根据任务状态自动切换动画；
+- 只有 P0 已确认行映射后，才声明 Running、Waiting、Review、Failed 等状态对应关系；
 - 用户手动在 Settings > Pets 中切换不同 Pet。
+
+Pet Skill 不实现任务状态监听，也不伪造 ChatGPT Desktop 的状态事件。它只提供符合官方契约的图集；状态切换是否成功必须通过真实应用行为验收。
 
 ### 8.2 MVP 不支持
 
@@ -350,6 +564,21 @@ Skill 必须报告：
 - 不上传用户参考图或生成中间图；
 - 外部社区 Pet 必须检查许可证和安装脚本。
 
+### 自动化测试矩阵
+
+至少覆盖：
+
+| 类别 | 必测场景 |
+| --- | --- |
+| 输入 | 缺失图片、空文件、非图片、超大图片、重复帧、非法 ID |
+| 图片 | PNG/JPEG/WebP 解码、RGB 转 RGBA、四角透明、绿边和内部误删检测 |
+| 图集 | 8×9 契约、单帧尺寸、行映射、帧数、越界和裁切 |
+| manifest | 必填字段、相对路径、目录越界、未知字段、契约版本不匹配 |
+| 安装 | 首次安装、同 ID 拒绝覆盖、`--replace`、权限失败、磁盘失败、回滚 |
+| 平台 | macOS 路径、Windows 空格路径、Windows Unicode 路径、不同路径分隔符 |
+| 安全 | 符号链接越界、`..` 路径、外部 URL、超大解压或输出文件 |
+| 运行 | Refresh 后出现、选择后 `/pet` 唤醒、任务状态动画至少一轮 |
+
 ## 10. 实施阶段
 
 ### P0：验证官方契约
@@ -358,6 +587,8 @@ Skill 必须报告：
 2. 生成一个大头小身体测试 Pet。
 3. 保存官方生成的 `pet.json` 和图集。
 4. 记录实际行顺序、尺寸和应用行为。
+5. 生成 `contract.json`，并由 macOS 和 Windows 至少各一名验证者确认。
+6. 将文档中的所有“默认”字段替换为已观测值，或明确标记为可配置项。
 
 ### P1：加入 Skill Agent 流程
 
@@ -365,6 +596,8 @@ Skill 必须报告：
 2. 强制提示词包含 cartoon、anthropomorphic、large head、small body。
 3. 由 Codex 原生 Image Generation 生成基准图和动作素材。
 4. 由本地脚本拼接、校验和安装。
+5. 只在 `validation.json` 为通过状态后允许安装。
+6. 将 `generated`、`validated`、`installed` 和 `running` 状态分开报告。
 
 ### P2：增强质量工具
 
@@ -372,6 +605,7 @@ Skill 必须报告：
 2. 自动测量角色占比、alpha 覆盖率和脚底基线。
 3. 增加逐帧视觉 QA 报告。
 4. 支持用户确认后重生成单个失败动作。
+5. 为失败动作保留稳定帧 ID，避免重生成导致整张图集行号漂移。
 
 ### P3：实验性自动选择
 

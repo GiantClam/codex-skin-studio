@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "chatgpt-desktop-pet-8x9-provisional",
+  "status": "provisional",
+  "source": "codex-skin-studio-template",
+  "grid": {
+    "columns": 8,
+    "rows": 9
+  },
+  "frame": {
+    "width": 192,
+    "height": 208
+  },
+  "spritesheet": {
+    "format": "webp",
+    "colorMode": "rgba"
+  },
+  "rows": [
+    "idle",
+    "running-right",
+    "running-left",
+    "waving",
+    "jumping",
+    "failed",
+    "waiting",
+    "running",
+    "review"
+  ]
+}

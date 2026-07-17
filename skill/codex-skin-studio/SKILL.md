@@ -8,6 +8,12 @@ description: Design, generate, validate, apply, inspect, or remove single-image 
 Let Codex handle visual decisions. Delegate file validation, application discovery,
 restart orchestration, and CDP injection to `scripts/apply.mjs`.
 
+This Skill also supports an optional paired Pet workflow. A paired bundle contains
+one ChatGPT Desktop theme and one compatible Pet package. The theme can be applied
+automatically; Pet installation is local and final Pet selection must be confirmed
+through ChatGPT Desktop Settings > Pets > Refresh unless the current official Pet
+contract exposes a supported selection API.
+
 The bundled default example is `examples/slayers-xellos-night/`. Use it as a
 known-good reference for the one-shot theme file layout and as the starter skin
 when a user asks to preview the included example. It is an example asset, not an
@@ -215,6 +221,157 @@ node "$SKILL_ROOT/scripts/create-theme.mjs" \
 ```
 
 This command creates, validates, persists, and applies the theme. Its JSON `application.status` is authoritative. If it is `scheduled`, wait for `status` to become `active` before reporting completion.
+
+## Generate a paired Pet and theme
+
+Use this workflow when the user asks for a theme and a matching ChatGPT Desktop
+Pet, mascot, companion, or animated character.
+
+### Pet visual contract
+
+Every generated Pet must be:
+
+- cartoonized, never photorealistic;
+- anthropomorphic, with readable expressions and work-state poses;
+- large-head and small-body, with the head as the first visual focus;
+- consistent across all action frames;
+- free of text, logos, watermarks, extra characters, UI, hard shadows, and cropped limbs.
+
+The default visual target is a head occupying roughly 45-60 percent of the
+character height, a body occupying roughly 40-55 percent, a head at least 1.1
+times the shoulder width, and at least 6 percent transparent padding around the
+complete character. These are QA targets, not permission to ignore the source
+character's identity or defining details.
+
+### Image generation rules
+
+1. Inspect every local reference image with Vision before generation.
+2. Classify each image as `subject/object`, `style-reference`, `composition/layout-reference`, or `brand/logo`.
+3. Preserve the subject's identity, silhouette, hairstyle, clothing, colors, materials, markings, and accessories before applying the cartoon mascot transformation.
+4. Generate one canonical character reference first.
+5. Generate one action at a time using the canonical reference. Do not ask Image Generation to draw the final 8x9 atlas in one call.
+6. Include `large head and small body`, `cute anthropomorphic cartoon`, and a friendly expressive face in every Pet action prompt.
+7. Use a flat `#00FF00` background for generated action images when native transparency is not available. Do not retain the chroma-key background in the installed atlas.
+8. Inspect the generated reference and action frames with Vision. Reject a frame if the character is photorealistic, no longer anthropomorphic, loses the large-head/small-body ratio, changes identity, contains extra content, or is cropped.
+9. If native Image Generation is unavailable, report its exact error and stop. Do not call an external image service or request an API key automatically.
+
+### Pet contract gate
+
+Pet assembly is contract-driven. Use the current observed contract captured from
+the official `hatch-pet` Skill and ChatGPT Desktop. The repository template at
+`templates/pet-contract.json` is provisional and must not be used for normal
+installation. The scripts reject provisional contracts unless the explicit
+`--allow-provisional` flag is used for local tests only.
+
+Before implementing or shipping a new contract, record the ChatGPT Desktop
+version and platform, hatch-pet version or generation date, manifest fields,
+spritesheet format, column count, row count, frame dimensions, row semantics,
+and Settings > Pets > Refresh and `/pet` results.
+
+Never infer an animation row mapping from a community example. If the observed
+contract is not 8 columns by 9 rows, stop with `PET_CONTRACT_MISMATCH` and update
+the versioned contract adapter before generating a Pet.
+
+### Pet input and assembly
+
+Create a frame manifest with one list of frames per observed row. Each row must
+contain exactly eight frame paths for the current 8x9 contract:
+
+```json
+{
+  "contractVersion": "observed-contract-version",
+  "rows": {
+    "idle": { "frames": ["idle-00.png", "idle-01.png"] }
+  }
+}
+```
+
+The example is abbreviated; production input must include every contract row
+and every frame. Use the deterministic local tools:
+
+```bash
+node "$SKILL_ROOT/scripts/create-pet.mjs" \
+  --id "pet-id" \
+  --name "Pet Name" \
+  --frames "/absolute/path/to/frames.json" \
+  --out "/absolute/path/to/pet-id" \
+  --contract "/absolute/path/to/observed-contract.json" \
+  --json
+
+node "$SKILL_ROOT/scripts/validate-pet.mjs" \
+  --directory "/absolute/path/to/pet-id" \
+  --contract "/absolute/path/to/observed-contract.json" \
+  --json
+
+node "$SKILL_ROOT/scripts/install-pet.mjs" \
+  --directory "/absolute/path/to/pet-id" \
+  --contract "/absolute/path/to/observed-contract.json" \
+  --pets-dir "$HOME/.codex/pets" \
+  --replace \
+  --json
+```
+
+`create-pet.mjs` performs chroma-key removal, fixed-size contain scaling,
+transparent canvas composition, RGBA WebP encoding, and manifest creation.
+`validate-pet.mjs` checks the manifest, contract version, dimensions, alpha
+channel, transparent corners, paths, and file size. Vision remains responsible
+for semantic checks that pixels alone cannot prove. `install-pet.mjs` uses an
+atomic sibling-directory replacement and never deletes another Pet ID.
+
+Supported stable errors include `PET_INPUT_INVALID`, `PET_CONTRACT_MISMATCH`,
+`PET_IMAGE_INVALID`, `PET_ALPHA_INVALID`, `PET_SPRITESHEET_INVALID`,
+`PET_MANIFEST_INVALID`, `PET_PATH_UNSAFE`, and `PET_INSTALL_FAILED`.
+
+Inspect local Pet state with:
+
+```bash
+node "$SKILL_ROOT/scripts/pet.mjs" status \
+  --json
+```
+
+### Create and switch a paired bundle
+
+After the theme and Pet independently pass validation, create one bundle:
+
+```bash
+node "$SKILL_ROOT/scripts/create-paired.mjs" \
+  --id "paired-id" \
+  --name "Paired Theme" \
+  --theme "/absolute/path/to/theme" \
+  --pet "/absolute/path/to/pet" \
+  --out "/absolute/path/to/paired-id" \
+  --contract "/absolute/path/to/observed-contract.json" \
+  --json
+```
+
+The output contains `bundle.json`, `theme/theme.json`, `theme/hero.webp`,
+`pet/pet.json`, and `pet/spritesheet.webp`.
+
+When the user asks to switch the pair, run:
+
+```bash
+node "$SKILL_ROOT/scripts/switch-paired.mjs" \
+  --bundle "/absolute/path/to/paired-id" \
+  --contract "/absolute/path/to/observed-contract.json" \
+  --pets-dir "$HOME/.codex/pets" \
+  --json
+```
+
+This command validates the complete bundle, installs the matching Pet, applies
+the matching theme through `apply.mjs`, and records paired state. It must report
+`theme-applied-pet-refresh-required` or
+`theme-scheduled-pet-refresh-required`, never pretend that Pet selection has
+completed. The user must then use ChatGPT Desktop Settings > Pets > Refresh,
+choose the matching Pet, and invoke `/pet`. Inspect the combined state with:
+
+```bash
+node "$SKILL_ROOT/scripts/paired-status.mjs" --json
+```
+
+Do not automate arbitrary Settings clicks or modify application resources. If a
+future official API exposes Pet refresh and selection, add a versioned adapter
+behind `switch-paired.mjs` and require a real postcondition before reporting
+`paired-active`.
 
 ## Validate
 

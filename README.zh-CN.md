@@ -4,9 +4,9 @@
 
 面向 macOS 和 Windows ChatGPT Desktop 的 AI 换肤 Skill 与轻量运行时。
 
-本仓库包含 `codex-skin-studio` Codex Skill 以及零依赖 Node.js 工具链。Skill 可以把生图结果或用户提供的图片制作成完整主题，校验本地资源，通过本机回环 CDP 应用到 ChatGPT Desktop，并通过 macOS LaunchAgent 或 Windows Task Scheduler 在电脑登录、应用启动和 Renderer 重载后自动恢复。
+本仓库包含 `codex-skin-studio` Codex Skill 以及轻量 Node.js 工具链。主题换肤路径保持零依赖；可选 Pet 精灵图路径使用 ChatGPT Desktop 随附的 `sharp` 运行时（如果可用）。Skill 可以把生图结果或用户提供的图片制作成完整主题，校验本地资源，通过本机回环 CDP 应用到 ChatGPT Desktop，并通过 macOS LaunchAgent 或 Windows Task Scheduler 在电脑登录、应用启动和 Renderer 重载后自动恢复。
 
-本项目仅将 [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) 作为研究和设计参考，独立实现轻量版本，不是对其完整仓库 Fork 后修改，也不宣称功能完全一致。当前范围是 Codex Skill 加本地零依赖运行时，后续计划独立扩展皮肤网站能力。
+本项目仅将 [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) 作为研究和设计参考，独立实现轻量版本，不是对其完整仓库 Fork 后修改，也不宣称功能完全一致。当前范围是 Codex Skill 加轻量本地运行时，后续计划独立扩展皮肤网站能力。
 
 当前应用名称是 ChatGPT Desktop。macOS 技术 Bundle ID 为 `com.openai.codex`；Windows 使用 ChatGPT 可执行文件。
 
@@ -25,6 +25,8 @@
 - `Skins` 菜单打开时和运行期间会自动刷新本地主题，新创建的主题无需重启 ChatGPT Desktop 即可出现。
 - 过大的 PNG/JPG 主背景会先在 Renderer 中解码并压缩为较小的 WebP Data URL，避免 CSS 过大导致背景规则被静默丢弃。
 - 主题生成阶段也会自动把 Hero、Logo、肖像卡转换为 `.webp` 并同步更新 `theme.json`。
+- 支持配套 Pet 生成：Pet 必须卡通化、拟人化、大头小身体，并组装为可校验的 8×9 RGBA WebP 精灵图。
+- 支持主题 + Pet 配套 Bundle、原子安装、本地状态查询和一次性配套切换命令。
 - 不修改 `app.asar`，不修改应用签名，不需要网站、数据库、远程服务或任意主题 CSS。
 - Skill 分发文件全部使用英文 ASCII；Skill 可以用中文或其他语言回复用户。
 
@@ -69,11 +71,21 @@ skill/codex-skin-studio/
 ├── agents/openai.yaml
 ├── scripts/
 │   ├── apply.mjs
+│   ├── create-paired.mjs
+│   ├── create-pet.mjs
 │   ├── create-theme.mjs
+│   ├── install-pet.mjs
+│   ├── paired-status.mjs
+│   ├── paired.mjs
+│   ├── pet.mjs
 │   └── persist.mjs
-├── templates/theme.json
+├── templates/
+│   ├── pet-contract.json
+│   ├── pet.json
+│   └── theme.json
 └── examples/
     ├── cyberpunk/
+    ├── pets/mascot/
     └── slayers-xellos-night/
         ├── hero.webp
         └── theme.json
@@ -148,6 +160,16 @@ Skill 会先使用 Vision 检查图片，再明确标记主体角色，优先保
 ```
 
 Skill 会检查比例、安全区、对比度、文字和水印，然后再创建主题。
+
+### 配套生成主题与 Pet
+
+示例请求：
+
+```text
+根据这张人物参考图，同时生成 ChatGPT Desktop 主题和一个卡通化、拟人化、大头小身体的 Pet，然后配套切换。
+```
+
+Skill 会分别生成 Hero 和 Pet 动作帧，分别校验，创建配套 Bundle，原子安装 Pet，并应用主题。由于当前 ChatGPT Desktop 主要通过设置中的 Pets > Refresh 和 Pet 选择界面管理 Pet，命令会真实报告 `theme-applied-pet-refresh-required`，用户仍需在设置中刷新、选择匹配 Pet，并使用 `/pet` 唤醒，不能把主题已应用误报为 Pet 已切换。
 
 ## 五区视觉契约
 
@@ -297,7 +319,7 @@ npm run test:codex-skin-studio
 npm run package:codex-skin-studio
 ```
 
-Skill 分发内容保持零依赖和英文 ASCII-only。主题名称和用户回复可以使用任意语言。
+主题换肤分发路径保持零依赖和英文 ASCII-only；可选 Pet 图集工具需要 `sharp`，优先使用 ChatGPT Desktop 随附的 Node 运行时。主题名称和用户回复可以使用任意语言。
 
 ## 安全边界
 

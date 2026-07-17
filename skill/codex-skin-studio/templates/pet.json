@@ -1,0 +1,12 @@
+{
+  "id": "pet-id",
+  "displayName": "Pet Name",
+  "description": "A cute anthropomorphic desktop companion.",
+  "spritesheetPath": "spritesheet.webp",
+  "contractVersion": "observed-contract-version",
+  "visualContract": {
+    "style": "cartoon",
+    "anthropomorphic": true,
+    "headToBody": "large-head-small-body"
+  }
+}

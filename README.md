@@ -4,9 +4,9 @@
 
 AI-orchestrated skins for ChatGPT Desktop on macOS and Windows.
 
-This repository contains the `codex-skin-studio` Codex Skill and its zero-dependency Node.js runtime. The Skill turns a generated or user-provided image into a complete ChatGPT Desktop theme, validates the local assets, applies the theme through loopback CDP, and can keep the selected theme alive across app and computer restarts through macOS `launchd` or Windows Task Scheduler.
+This repository contains the `codex-skin-studio` Codex Skill and its lightweight Node.js runtime. The theme path remains zero-dependency; the optional Pet atlas path uses the `sharp` runtime bundled with ChatGPT Desktop when available. The Skill turns a generated or user-provided image into a complete ChatGPT Desktop theme, validates the local assets, applies the theme through loopback CDP, and can keep the selected theme alive across app and computer restarts through macOS `launchd` or Windows Task Scheduler.
 
-This project uses [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) as a research and design reference. It is an independent lightweight implementation, not a complete fork with modifications, and does not claim feature parity. The current scope is a Codex Skill plus a local zero-dependency runtime; a dedicated skin website is planned as a separate expansion.
+This project uses [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) as a research and design reference. It is an independent lightweight implementation, not a complete fork with modifications, and does not claim feature parity. The current scope is a Codex Skill plus a lightweight local runtime; a dedicated skin website is planned as a separate expansion.
 
 The current application is ChatGPT Desktop. macOS identifies it with bundle identifier `com.openai.codex`; Windows uses the ChatGPT executable.
 
@@ -25,6 +25,8 @@ The current application is ChatGPT Desktop. macOS identifies it with bundle iden
 - The `Skins` menu refreshes valid local themes on open and in the background, so newly created themes appear without restarting ChatGPT Desktop.
 - Oversized raster Heroes are decoded and compressed to a smaller WebP data URL before CSS injection, avoiding stylesheet limits that can silently drop the background rule.
 - Theme creation also converts the final Hero, logo, and portrait assets to `.webp` on disk and updates `theme.json` automatically.
+- Contract-driven Pet generation: cartoonized, anthropomorphic, large-head/small-body companions assembled into validated 8x9 RGBA WebP atlases.
+- Paired theme + Pet bundles with atomic Pet installation, local status reporting, and one switch command that applies the theme and reports the required Pets Refresh step.
 - No `app.asar` modification, code-signature changes, database, website, remote service, or arbitrary theme CSS.
 - English-only Skill distribution files; the Skill can respond to users in their language.
 
@@ -78,11 +80,21 @@ skill/codex-skin-studio/
 ├── agents/openai.yaml
 ├── scripts/
 │   ├── apply.mjs
+│   ├── create-paired.mjs
+│   ├── create-pet.mjs
 │   ├── create-theme.mjs
+│   ├── install-pet.mjs
+│   ├── paired-status.mjs
+│   ├── paired.mjs
+│   ├── pet.mjs
 │   └── persist.mjs
-├── templates/theme.json
+├── templates/
+│   ├── pet-contract.json
+│   ├── pet.json
+│   └── theme.json
 └── examples/
     ├── cyberpunk/
+    ├── pets/mascot/
     └── slayers-xellos-night/
         ├── hero.webp
         └── theme.json
@@ -166,6 +178,21 @@ Use this local image directly as the ChatGPT Desktop background and apply it.
 ```
 
 The Skill checks aspect ratio, safe zones, contrast, text, and watermarks before applying it.
+
+### Paired theme and Pet
+
+Example request:
+
+```text
+Create a matching ChatGPT Desktop theme and a cute anthropomorphic large-head/small-body Pet from this character reference, then switch them together.
+```
+
+The Skill generates the hero and Pet action frames separately, validates both,
+creates a paired bundle, installs the Pet atomically, and applies the theme.
+Because ChatGPT Desktop currently exposes Pet Refresh and selection through its
+own Settings UI rather than a stable public selector API, the command reports
+`theme-applied-pet-refresh-required` until the user chooses the matching Pet in
+Settings > Pets > Refresh and invokes `/pet`.
 
 ## Five-Zone Visual Contract
 
@@ -317,7 +344,7 @@ npm run test:codex-skin-studio
 npm run package:codex-skin-studio
 ```
 
-The Skill distribution is intentionally zero-dependency and English ASCII-only. Theme names and user-facing responses may use any language.
+The theme distribution is intentionally zero-dependency and English ASCII-only. The optional Pet atlas tools require `sharp`, using ChatGPT Desktop's bundled Node runtime when available. Theme names and user-facing responses may use any language.
 
 ## Security Boundary
 

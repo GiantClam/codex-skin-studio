@@ -386,10 +386,16 @@ PET_INSTALL_FAILED
 skill/codex-skin-studio/
 ├── SKILL.md
 ├── scripts/
+│   ├── pet.mjs
 │   ├── create-pet.mjs
 │   ├── validate-pet.mjs
 │   └── install-pet.mjs
+│   ├── paired.mjs
+│   ├── create-paired.mjs
+│   ├── switch-paired.mjs
+│   └── paired-status.mjs
 ├── templates/
+│   ├── pet-contract.json
 │   └── pet.json
 └── examples/
     └── pets/
@@ -478,6 +484,17 @@ validate source
 ```
 
 任何 rename、权限或磁盘空间错误都必须恢复旧目录，并返回 `PET_INSTALL_FAILED`。安装器不得删除用户 Pet 根目录中的其他 ID。
+
+### 配套 Bundle 工具
+
+已实现的配套工具职责：
+
+- `create-paired.mjs`：校验主题和 Pet，生成 `bundle.json`、`theme/` 和 `pet/` 的原子 Bundle；
+- `switch-paired.mjs`：校验 Bundle，安装匹配 Pet，调用现有主题 apply 流程，并记录配套状态；
+- `paired-status.mjs`：合并报告主题 Renderer 状态、Pet 本地安装状态和 Bundle 状态；
+- `pet.mjs` / `paired.mjs`：提供共享校验、图集、路径和事务安装实现。
+
+当前 `switch-paired.mjs` 的成功状态明确为 `theme-applied-pet-refresh-required` 或 `theme-scheduled-pet-refresh-required`。由于当前本机 ChatGPT Desktop 没有可观测的 Pets 设置或官方选择接口，不能报告 `paired-active`。
 
 ## 7. 用户体验
 
@@ -634,3 +651,16 @@ Codex 原生 Image Generation
 - [OpenAI Codex Issue #20863: configurable pet animation](https://github.com/openai/codex/issues/20863)
 - [Mimi Codex Pet reference package](https://github.com/Spacebody/mimi-codex-pet)
 - [codex-pet CLI and package documentation](https://codex-pet.com/docs)
+
+## 13. Current implementation status
+
+截至 2026-07-17：
+
+- Pet 图集生成、chroma-key 去背景、RGBA WebP 输出、manifest 校验、原子安装和本地状态查询已经实现；
+- 配套主题 + Pet Bundle 创建、配套切换和合并状态查询已经实现；
+- 英文 `SKILL.md` 已加入 Pet 和配套 Bundle 编排规则；
+- 自动化回归测试为 `82/82`；
+- 当前模板 contract 仍为 `provisional`，正常安装会拒绝它；
+- 本机 ChatGPT Desktop `26.715.21316` 的当前 Renderer DOM 和 `~/.codex/pets` 未发现 Pets / `hatch-pet` 可观测契约，因此 P0 官方契约冻结和真实 Refresh、选择、`/pet` 端到端验收仍未完成。
+
+这不是实现失败，而是刻意保留的安全门：没有真实应用契约时，工具宁可返回 `PET_CONTRACT_MISMATCH`，也不能生成一个看似成功但无法被 ChatGPT Desktop 识别的 Pet。

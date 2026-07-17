@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,9 +9,14 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+const require = createRequire(import.meta.url);
+const sharp = require("sharp");
+
 import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
 import { buildPlist, buildTaskXml, createControlServer, parseArgs as parsePersistArgs } from "../skill/codex-skin-studio/scripts/persist.mjs";
+import { createPet, defaultPetsDir, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
+import { createPairBundle, validatePairBundle } from "../skill/codex-skin-studio/scripts/paired.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -27,6 +33,17 @@ const validManifest = {
   colors: { accent: "#00aaff", secondary: "#ff00aa", surface: "#101018", text: "#ffffff" },
 };
 
+const observedPetContract = {
+  schemaVersion: 1,
+  contractVersion: "observed-test-8x9",
+  status: "observed",
+  source: "test",
+  grid: { columns: 8, rows: 9 },
+  frame: { width: 16, height: 16 },
+  spritesheet: { format: "webp", colorMode: "rgba" },
+  rows: ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"],
+};
+
 async function withTempDir(prefix, callback) {
   const root = await mkdtemp(join(tmpdir(), prefix));
   try {
@@ -37,8 +54,20 @@ async function withTempDir(prefix, callback) {
 }
 
 async function makeTheme(root, manifest = validManifest) {
+  await mkdir(root, { recursive: true });
   await writeFile(join(root, "theme.json"), JSON.stringify(manifest));
   await writeFile(join(root, "hero.png"), Buffer.from([1]));
+}
+
+async function makePetFrames(root, contract = observedPetContract) {
+  const framesRoot = join(root, "frames");
+  await mkdir(framesRoot, { recursive: true });
+  const pixel = await sharp(Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"><circle cx=\"8\" cy=\"6\" r=\"4\" fill=\"#ffccaa\"/><rect x=\"5\" y=\"10\" width=\"6\" height=\"5\" rx=\"2\" fill=\"#6750a4\"/></svg>")).png().toBuffer();
+  const rows = Object.fromEntries(contract.rows.map((row) => [row, { frames: Array.from({ length: contract.grid.columns }, (_, index) => `${row}-${String(index).padStart(2, "0")}.png`) }]));
+  for (const row of contract.rows) for (const frame of rows[row].frames) await writeFile(join(framesRoot, frame), pixel);
+  const manifestPath = join(framesRoot, "frames.json");
+  await writeFile(manifestPath, JSON.stringify({ contractVersion: contract.contractVersion, rows }));
+  return manifestPath;
 }
 
 test("accepts and normalizes a valid theme manifest", () => {
@@ -1251,9 +1280,53 @@ test("restart-normal state reflects confirmed removal on pending and spawn failu
   }
 });
 
+test("pet contracts reject provisional data until the observed contract is supplied", () => {
+  assert.throws(() => validateContract({ ...observedPetContract, status: "provisional" }), /provisional/);
+  assert.deepEqual(validateContract(observedPetContract), observedPetContract);
+  assert.throws(() => validateContract({ ...observedPetContract, grid: { columns: 4, rows: 9 } }), /8x9/);
+});
+
+test("resolves Pet roots for macOS and Windows without hard-coded user paths", () => {
+  assert.equal(defaultPetsDir({ platform: "darwin", env: { HOME: "/Users/tester" } }), join("/Users/tester", ".codex", "pets"));
+  assert.equal(defaultPetsDir({ platform: "win32", env: { USERPROFILE: "C:\\Users\\Tester" } }), "C:\\Users\\Tester\\.codex\\pets");
+  assert.equal(defaultPetsDir({ platform: "win32", env: { CODEX_HOME: "D:\\Codex" } }), "D:\\Codex\\pets");
+});
+
+test("creates, validates, installs, and reports a deterministic Pet atlas", async () => {
+  await withTempDir("codex-pet-", async (root) => {
+    const frames = await makePetFrames(root);
+    const created = await createPet({ id: "test-pet", displayName: "Test Pet", frames, out: join(root, "pet"), contract: observedPetContract });
+    assert.equal(created.status, "created");
+    const validated = await validatePetDirectory(join(root, "pet"), { contract: observedPetContract });
+    assert.deepEqual(validated.dimensions, { width: 128, height: 144, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true });
+    const installed = await installPet(join(root, "pet"), { petsDir: join(root, "pets"), contract: observedPetContract });
+    assert.equal(installed.status, "installed");
+    assert.equal(installed.selection, "refresh-required");
+    await assert.rejects(installPet(join(root, "pet"), { petsDir: join(root, "pets"), contract: observedPetContract }), /pass --replace/);
+    const status = await petStatus({ petsDir: join(root, "pets") });
+    assert.equal(status.active, "test-pet");
+    assert.equal(status.pets[0].id, "test-pet");
+  });
+});
+
+test("creates and validates a paired theme and Pet bundle", async () => {
+  await withTempDir("codex-paired-", async (root) => {
+    const frames = await makePetFrames(root);
+    const pet = await createPet({ id: "paired-demo", displayName: "Paired Demo", frames, out: join(root, "pet"), contract: observedPetContract });
+    const theme = join(root, "theme");
+    await makeTheme(theme, { ...validManifest, id: "paired-demo", name: "Paired Demo" });
+    const bundle = await createPairBundle({ id: "paired-demo", displayName: "Paired Demo", themeDir: theme, petDir: pet.directory, out: join(root, "bundle"), contract: observedPetContract });
+    assert.equal(bundle.status, "created");
+    await assert.rejects(createPairBundle({ id: "paired-demo", displayName: "Paired Demo", themeDir: theme, petDir: pet.directory, out: join(root, "bundle"), contract: observedPetContract }), /pass --replace/);
+    const validated = await validatePairBundle(bundle.directory, { contract: observedPetContract });
+    assert.equal(validated.bundle.themeId, "paired-demo");
+    assert.equal(validated.bundle.petId, "paired-demo");
+  });
+});
+
 test("distribution files are English ASCII text and SKILL has valid frontmatter", async () => {
-  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-theme.mjs", "scripts/persist.mjs", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
-  const binaryExpected = ["examples/slayers-xellos-night/hero.webp"];
+  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/switch-paired.mjs", "scripts/validate-pet.mjs", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
+  const binaryExpected = ["examples/pets/mascot/spritesheet.webp", "examples/slayers-xellos-night/hero.webp"];
   assert.deepEqual(await listFiles(skillRoot), [...textExpected, ...binaryExpected].sort((a, b) => a.localeCompare(b)));
   const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
   assert.match(skill, /^---\nname: codex-skin-studio\ndescription: [^\n]+\n---\n/);
@@ -1273,15 +1346,21 @@ test("distribution files are English ASCII text and SKILL has valid frontmatter"
   assert.match(skill, /Skill installation itself only copies files/);
   assert.match(skill, /Do not use a ChatGPT Scheduled Task/);
   assert.match(skill, /status.*active/);
+  assert.match(skill, /large-head and small-body/);
+  assert.match(skill, /PET_CONTRACT_MISMATCH/);
+  assert.match(skill, /create-paired\.mjs/);
+  assert.match(skill, /theme-applied-pet-refresh-required/);
   assert.match(await readFile(join(skillRoot, "agents/openai.yaml"), "utf8"), /invoke \$imagegen first/);
   for (const relative of textExpected) {
     const bytes = await readFile(join(skillRoot, relative));
     assert.ok(bytes.every((byte) => byte < 128), `${relative} must be ASCII-only`);
   }
-  const hero = await readFile(join(skillRoot, binaryExpected[0]));
-  assert.ok(hero.length > 0);
-  assert.equal(hero.subarray(0, 4).toString("ascii"), "RIFF");
-  assert.equal(hero.subarray(8, 12).toString("ascii"), "WEBP");
+  for (const relative of binaryExpected) {
+    const image = await readFile(join(skillRoot, relative));
+    assert.ok(image.length > 0);
+    assert.equal(image.subarray(0, 4).toString("ascii"), "RIFF");
+    assert.equal(image.subarray(8, 12).toString("ascii"), "WEBP");
+  }
 });
 
 test("package script creates exactly the new Skill folder contents", async () => {
@@ -1302,14 +1381,28 @@ test("package script creates exactly the new Skill folder contents", async () =>
     "codex-skin-studio/examples/cyberpunk/",
     "codex-skin-studio/examples/cyberpunk/prompt.md",
     "codex-skin-studio/examples/cyberpunk/theme.json",
+    "codex-skin-studio/examples/pets/",
+    "codex-skin-studio/examples/pets/mascot/",
+    "codex-skin-studio/examples/pets/mascot/pet.json",
+    "codex-skin-studio/examples/pets/mascot/spritesheet.webp",
     "codex-skin-studio/examples/slayers-xellos-night/",
     "codex-skin-studio/examples/slayers-xellos-night/hero.webp",
     "codex-skin-studio/examples/slayers-xellos-night/theme.json",
     "codex-skin-studio/scripts/",
     "codex-skin-studio/scripts/apply.mjs",
+    "codex-skin-studio/scripts/create-paired.mjs",
+    "codex-skin-studio/scripts/create-pet.mjs",
     "codex-skin-studio/scripts/create-theme.mjs",
+    "codex-skin-studio/scripts/install-pet.mjs",
+    "codex-skin-studio/scripts/paired-status.mjs",
+    "codex-skin-studio/scripts/paired.mjs",
+    "codex-skin-studio/scripts/pet.mjs",
     "codex-skin-studio/scripts/persist.mjs",
+    "codex-skin-studio/scripts/switch-paired.mjs",
+    "codex-skin-studio/scripts/validate-pet.mjs",
     "codex-skin-studio/templates/",
+    "codex-skin-studio/templates/pet-contract.json",
+    "codex-skin-studio/templates/pet.json",
     "codex-skin-studio/templates/theme.json",
   ];
   assert.equal(entries.length, expectedEntries.length);

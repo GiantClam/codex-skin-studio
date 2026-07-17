@@ -271,6 +271,9 @@ temporarily unavailable.
 When a native ChatGPT Desktop menu or popover opens, the switcher temporarily
 hides itself and releases pointer events so file open-method menus and other
 native controls always receive the interaction.
+The switcher is also draggable within the conversation viewport. A click below
+the drag threshold opens the theme menu; a drag moves the button and persists
+its clamped position in Renderer-local storage.
 
 ## Inspect or restore
 

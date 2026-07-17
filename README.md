@@ -51,6 +51,8 @@ When persistence is enabled, the worker also exposes a loopback-only control end
 
 The switcher observes native ChatGPT Desktop menu and popover state. It temporarily hides and disables its own hit area while a native menu such as a file open-method menu is expanded, then restores itself when the native menu closes.
 
+The switcher can be dragged within the conversation viewport. A normal click opens the local theme menu; a drag moves the control and persists its bounded position in Renderer-local storage.
+
 ## Repository Layout
 
 ```text

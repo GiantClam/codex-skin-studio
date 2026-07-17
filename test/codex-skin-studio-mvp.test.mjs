@@ -127,6 +127,8 @@ test("emits the local skin switcher button and control routes", () => {
   assert.match(value, /min-height: 40px/);
   assert.match(value, /z-index: 90/);
   assert.match(value, /z-index: 1000 !important/);
+  assert.match(value, /cursor: grab/);
+  assert.match(value, /touch-action: none/);
   assert.match(value, /data-native-overlay="true"/);
   assert.match(value, /pointer-events: none/);
   assert.match(expression, /codex-skin-studio-switcher/);
@@ -137,6 +139,10 @@ test("emits the local skin switcher button and control routes", () => {
   assert.match(expression, /shell\?\.remove\(\);\s+shell = null/);
   assert.match(expression, /MutationObserver/);
   assert.match(expression, /aria-haspopup="menu"\]\[aria-expanded="true"/);
+  assert.match(expression, /localStorage/);
+  assert.match(expression, /pointerdown/);
+  assert.match(expression, /pointermove/);
+  assert.match(expression, /suppressClick/);
 });
 
 test("parses the local switcher control port and exposes a loopback control server", async (t) => {

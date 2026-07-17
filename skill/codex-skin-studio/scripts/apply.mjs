@@ -746,7 +746,9 @@ mark,
   background: color-mix(in srgb, var(--codex-skin-panel-surface) 92%, transparent);
   box-shadow: 0 5px 18px color-mix(in srgb, var(--codex-skin-surface) 44%, transparent), 0 0 0 1px color-mix(in srgb, var(--codex-skin-accent) 12%, transparent);
   backdrop-filter: blur(14px) saturate(1.15);
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 
 body [role="menu"]:not(#${SWITCHER_ID}-menu),
@@ -754,6 +756,10 @@ body [role="listbox"],
 body [data-radix-menu-content],
 body [data-radix-popper-content-wrapper] {
   z-index: 1000 !important;
+}
+
+#${SWITCHER_ID}[data-dragging="true"] > button {
+  cursor: grabbing;
 }
 
 #${SWITCHER_ID} > button:hover,
@@ -934,6 +940,25 @@ function switcherExpression(themes = []) {
       const status = shell.querySelector("#${SWITCHER_ID}-status");
       const styleNode = () => document.getElementById(${styleId});
       const localThemes = ${localThemes};
+      const positionKey = "codex-skin-studio-switcher-position";
+      const setPosition = (left, top, save = true) => {
+        const width = shell.offsetWidth || 104;
+        const height = shell.offsetHeight || 40;
+        const minTop = Math.min(88, Math.max(44, innerHeight - height - 8));
+        const nextLeft = Math.min(Math.max(12, Number(left) || 12), Math.max(12, innerWidth - width - 12));
+        const nextTop = Math.min(Math.max(minTop, Number(top) || minTop), Math.max(minTop, innerHeight - height - 8));
+        shell.style.left = nextLeft + "px";
+        shell.style.top = nextTop + "px";
+        shell.style.right = "auto";
+        shell.dataset.positioned = "true";
+        if (save) {
+          try { localStorage.setItem(positionKey, JSON.stringify({ left: nextLeft, top: nextTop })); } catch {}
+        }
+      };
+      try {
+        const savedPosition = JSON.parse(localStorage.getItem(positionKey) || "null");
+        if (Number.isFinite(savedPosition?.left) && Number.isFinite(savedPosition?.top)) setPosition(savedPosition.left, savedPosition.top, false);
+      } catch {}
       const nativeOverlayOpen = () => [...document.querySelectorAll('[aria-haspopup="menu"][aria-expanded="true"], [aria-haspopup="listbox"][aria-expanded="true"], [data-state="open"][aria-haspopup="menu"], [role="menu"], [role="listbox"], [data-radix-menu-content], [data-radix-popper-content-wrapper], [role="dialog"]')].some((node) => {
         if (shell.contains(node) || node === shell) return false;
         const rect = node.getBoundingClientRect();
@@ -942,6 +967,14 @@ function switcherExpression(themes = []) {
       });
       const syncNativeOverlay = () => {
         shell.dataset.nativeOverlay = nativeOverlayOpen() ? "true" : "false";
+      };
+      let drag = null;
+      const finishDrag = (event) => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        if (drag.moved) button.dataset.suppressClick = "true";
+        shell.dataset.dragging = "false";
+        try { button.releasePointerCapture?.(event.pointerId); } catch {}
+        drag = null;
       };
       const renderThemes = () => {
         if (!list || !status) return;
@@ -973,10 +1006,38 @@ function switcherExpression(themes = []) {
         status.textContent = localThemes.length ? "Local themes" : "No local themes yet";
       };
       if (button && menu && !shell.dataset.bound) {
-        button.addEventListener("click", () => {
+        button.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          const rect = shell.getBoundingClientRect();
+          drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top, moved: false };
+          try { button.setPointerCapture?.(event.pointerId); } catch {}
+        });
+        button.addEventListener("pointermove", (event) => {
+          if (!drag || event.pointerId !== drag.pointerId) return;
+          const deltaX = event.clientX - drag.startX;
+          const deltaY = event.clientY - drag.startY;
+          if (!drag.moved && Math.hypot(deltaX, deltaY) < 5) return;
+          drag.moved = true;
+          shell.dataset.dragging = "true";
+          menu.hidden = true;
+          button.setAttribute("aria-expanded", "false");
+          setPosition(drag.left + deltaX, drag.top + deltaY);
+        });
+        button.addEventListener("pointerup", finishDrag);
+        button.addEventListener("pointercancel", finishDrag);
+        button.addEventListener("dragstart", (event) => event.preventDefault());
+        button.addEventListener("click", (event) => {
+          if (button.dataset.suppressClick === "true") {
+            delete button.dataset.suppressClick;
+            event.preventDefault();
+            return;
+          }
           menu.hidden = !menu.hidden;
           button.setAttribute("aria-expanded", String(!menu.hidden));
           if (!menu.hidden) renderThemes();
+        });
+        addEventListener("resize", () => {
+          if (shell.dataset.positioned === "true") setPosition(parseFloat(shell.style.left), parseFloat(shell.style.top));
         });
         document.addEventListener("click", (event) => {
           if (!shell.contains(event.target)) {

@@ -10,7 +10,7 @@ import test from "node:test";
 
 import { commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
-import { buildPlist } from "../skill/codex-skin-studio/scripts/persist.mjs";
+import { buildPlist, createControlServer, parseArgs as parsePersistArgs } from "../skill/codex-skin-studio/scripts/persist.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -117,6 +117,40 @@ test("emits high-contrast workbench tokens for controls, menus, and previews", (
   assert.match(value, /::selection/);
 });
 
+test("emits the local skin switcher button and control routes", () => {
+  const value = css(validManifest, "data:image/png;base64,AA");
+  const expression = styleExpression(validManifest, "data:image/png;base64,AA", null, null, [{ id: "miku", name: "Miku" }]);
+  assert.match(value, /#codex-skin-studio-switcher/);
+  assert.match(value, /right: clamp\(96px, 11vw, 148px\)/);
+  assert.match(expression, /codex-skin-studio-switcher/);
+  assert.match(expression, /127\.0\.0\.1:9342\/apply/);
+  assert.match(expression, /Miku/);
+  assert.match(expression, /window\.open/);
+  assert.match(expression, /Switch ChatGPT Desktop skin/);
+  assert.match(expression, /shell\?\.remove\(\);\s+shell = null/);
+});
+
+test("parses the local switcher control port and exposes a loopback control server", async (t) => {
+  assert.deepEqual(parsePersistArgs(["persistence-worker", "--port", "9341", "--control-port", "9342", "--json"]), {
+    command: "persistence-worker", port: 9341, controlPort: 9342, jsonOutput: true,
+  });
+  const applied = [];
+  const server = createControlServer({
+    listThemesFn: async () => [{ id: "miku", name: "Miku", themeDir: "/tmp/miku", colors: validManifest.colors }],
+    applyThemeFn: async (themeDir, port) => { applied.push({ themeDir, port }); return { status: "applied", themeId: "miku" }; },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const themes = await (await fetch(`${base}/themes`)).json();
+  assert.deepEqual(themes.map(({ id, name }) => ({ id, name })), [{ id: "miku", name: "Miku" }]);
+  const response = await fetch(`${base}/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "miku" }) });
+  assert.deepEqual(await response.json(), { status: "applied", themeId: "miku" });
+  const popup = await fetch(`${base}/apply?id=miku`);
+  assert.match(await popup.text(), /window\.close/);
+  assert.deepEqual(applied, [{ themeDir: "/tmp/miku", port: 9341 }, { themeDir: "/tmp/miku", port: 9341 }]);
+});
+
 test("emits optional brand logo and polaroid asset layers", () => {
   const value = css(validManifest, "data:image/png;base64,AA", "data:image/png;base64,LOGO", "data:image/png;base64,POLAROID");
   assert.match(value, /nav > div:first-child > div:first-child > button\[aria-haspopup="menu"\]/);
@@ -209,6 +243,7 @@ test("builds an opt-in launch agent that keeps the renderer debuggable", () => {
   assert.match(plist, /<string>--port<\/string>/);
   assert.match(plist, /<key>KeepAlive<\/key>\s+<true\/>/);
   assert.match(plist, /<key>LimitLoadToSessionType<\/key>\s+<string>Aqua<\/string>/);
+  assert.match(plist, /<string>--control-port<\/string>\s+<string>9342<\/string>/);
   assert.match(buildPlist(), /persist\.mjs/);
 });
 

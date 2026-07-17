@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const PORT = 9341;
+const SWITCHER_PORT = 9342;
 const STYLE_ID = "codex-skin-studio-style";
+const SWITCHER_ID = "codex-skin-studio-switcher";
 const BUNDLE_ID = "com.openai.codex";
 const APP_DISPLAY_NAME = "ChatGPT Desktop";
 const EXPECTED_TEAM_ID = "2DC432GLL2";
@@ -156,6 +158,32 @@ async function loadTheme(themeDir) {
   const polaroid = await resolveAsset(manifest.polaroid, "polaroid");
   if ((Math.max(luminance(manifest.colors.surface), luminance(manifest.colors.text)) + 0.05) / (Math.min(luminance(manifest.colors.surface), luminance(manifest.colors.text)) + 0.05) < 4.5) throw new Error("surface and text colors must have a contrast ratio of at least 4.5");
   return { root, hero, logo, polaroid, manifest };
+}
+
+async function listThemes(themesDir = THEMES) {
+  let entries;
+  try {
+    entries = await readdir(themesDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const themes = [];
+  for (const entry of entries.filter((item) => item.isDirectory()).sort((left, right) => left.name.localeCompare(right.name))) {
+    try {
+      const theme = await loadTheme(join(themesDir, entry.name));
+      if (themes.some((item) => item.id === theme.manifest.id)) continue;
+      themes.push({
+        themeDir: theme.root,
+        id: theme.manifest.id,
+        name: theme.manifest.name,
+        colors: theme.manifest.colors,
+      });
+    } catch {
+      // Ignore incomplete or invalid directories so one failed draft cannot hide valid skins.
+    }
+  }
+  return themes;
 }
 
 function appCandidates() {
@@ -377,7 +405,7 @@ async function evaluateAll(list, expression) {
 
 const MAIN_TARGET_PROBE = `(() => { const root = document.getElementById("root"); const shell = document.querySelector(".app-shell-left-panel, .main-surface, .browser-main-surface, .composer-surface-chrome"); const title = document.title || ""; return { main: Boolean(root && shell), root: Boolean(root), shell: Boolean(shell), title, url: location.href }; })()`;
 const STATUS_EXPRESSION = `(() => { const node = document.getElementById(${JSON.stringify(STYLE_ID)}); const root = document.getElementById("root"); const computed = root ? getComputedStyle(root) : null; return { installed: Boolean(node), connected: Boolean(node?.isConnected), themeId: node?.dataset.themeId || null, heroLoaded: node?.dataset.heroLoaded === "true", logoLoaded: node?.dataset.logoLoaded === "true", polaroidLoaded: node?.dataset.polaroidLoaded === "true", cssText: node?.textContent?.trim() || "", cssRules: node?.sheet ? node.sheet.cssRules.length : 0, rootBackground: Boolean(computed && computed.backgroundImage && computed.backgroundImage !== "none") }; })()`;
-const REMOVE_STYLE_EXPRESSION = `(() => { const node = document.getElementById(${JSON.stringify(STYLE_ID)}); if (!node) return 0; node.remove(); return node.isConnected ? 0 : 1; })()`;
+const REMOVE_STYLE_EXPRESSION = `(() => { const node = document.getElementById(${JSON.stringify(STYLE_ID)}); const switcher = document.getElementById(${JSON.stringify(SWITCHER_ID)}); switcher?.remove(); if (!node) return 0; node.remove(); return node.isConnected ? 0 : 1; })()`;
 
 function injectionVerified(value, themeId, assets = {}) {
   return Boolean(value && value.connected && value.themeId === themeId && value.heroLoaded === true && (!assets.logo || value.logoLoaded === true) && (!assets.polaroid || value.polaroidLoaded === true) && value.cssText && value.cssRules > 0 && value.rootBackground);
@@ -690,6 +718,97 @@ mark,
   background: var(--codex-skin-accent) !important;
 }
 
+#${SWITCHER_ID} {
+  position: fixed;
+  top: 8px;
+  right: clamp(96px, 11vw, 148px);
+  z-index: 80;
+  color: var(--codex-skin-text);
+  font: 600 12px/1.2 ui-rounded, system-ui, sans-serif;
+}
+
+#${SWITCHER_ID} > button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--codex-skin-accent) 58%, var(--codex-skin-panel-surface));
+  border-radius: 9px;
+  color: var(--codex-skin-text);
+  background: color-mix(in srgb, var(--codex-skin-panel-surface) 92%, transparent);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--codex-skin-surface) 44%, transparent), 0 0 0 1px color-mix(in srgb, var(--codex-skin-accent) 12%, transparent);
+  backdrop-filter: blur(14px) saturate(1.15);
+  cursor: pointer;
+}
+
+#${SWITCHER_ID} > button:hover,
+#${SWITCHER_ID} > button[aria-expanded="true"] {
+  color: var(--codex-skin-on-accent);
+  background: var(--codex-skin-accent);
+}
+
+#${SWITCHER_ID} > button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
+#${SWITCHER_ID}-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  display: grid;
+  width: min(240px, calc(100vw - 24px));
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--codex-skin-accent) 58%, var(--codex-skin-panel-surface));
+  border-radius: 12px;
+  color: var(--codex-skin-text);
+  background: var(--codex-skin-panel-surface);
+  box-shadow: 0 16px 42px color-mix(in srgb, var(--codex-skin-surface) 64%, transparent);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+#${SWITCHER_ID}-menu[hidden] {
+  display: none;
+}
+
+#${SWITCHER_ID}-menu [data-theme-item] {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--codex-skin-text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+#${SWITCHER_ID}-menu [data-theme-item]:hover,
+#${SWITCHER_ID}-menu [data-theme-item][aria-checked="true"] {
+  color: var(--codex-skin-text);
+  background: var(--codex-skin-control-hover);
+}
+
+#${SWITCHER_ID}-menu [data-theme-item][disabled] {
+  color: var(--codex-skin-muted-text);
+  cursor: wait;
+}
+
+#${SWITCHER_ID}-status {
+  max-width: 220px;
+  padding: 4px 8px 2px;
+  color: var(--codex-skin-muted-text);
+  font-size: 11px;
+}
+
 [data-app-action-sidebar-thread-active="true"] {
   background: linear-gradient(90deg, color-mix(in srgb, var(--codex-skin-accent) 22%, transparent), color-mix(in srgb, var(--codex-skin-secondary) 16%, transparent)) !important;
 }
@@ -775,11 +894,92 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function styleExpression(theme, hero, logo = null, polaroid = null) {
+function switcherExpression(themes = []) {
+  const switcherId = JSON.stringify(SWITCHER_ID);
+  const styleId = JSON.stringify(STYLE_ID);
+  const applyUrl = JSON.stringify(`http://127.0.0.1:${SWITCHER_PORT}/apply`);
+  const localThemes = JSON.stringify(themes.map(({ id, name }) => ({ id, name })));
+  return `await (async () => {
+    try {
+      const body = document.body;
+      if (!body) return;
+      let shell = document.getElementById(${switcherId});
+      shell?.remove();
+      shell = null;
+      if (!shell) {
+        shell = document.createElement("div");
+        shell.id = ${switcherId};
+        shell.setAttribute("data-codex-skin-studio-switcher", "true");
+        shell.innerHTML = '<button type="button" data-switcher-button aria-expanded="false" title="Switch ChatGPT Desktop skin"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Zm0 1.5a6 6 0 1 1 0 12 6 6 0 0 1 0-12Zm-3.25 5.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm6.5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5ZM6.5 12c.72 1.4 1.9 2.1 3.5 2.1s2.78-.7 3.5-2.1c-.45-.35-.9-.52-1.36-.52-.7 0-1.4.28-2.14.84-.74-.56-1.45-.84-2.14-.84-.46 0-.91.17-1.36.52Z"/></svg><span>Skins</span></button><div id="${SWITCHER_ID}-menu" role="menu" hidden><div data-switcher-list></div><div id="${SWITCHER_ID}-status" role="status">Loading local skins...</div></div>';
+        body.appendChild(shell);
+      }
+      const button = shell.querySelector("[data-switcher-button]");
+      const menu = shell.querySelector("#${SWITCHER_ID}-menu");
+      const list = shell.querySelector("[data-switcher-list]");
+      const status = shell.querySelector("#${SWITCHER_ID}-status");
+      const styleNode = () => document.getElementById(${styleId});
+      const localThemes = ${localThemes};
+      const renderThemes = () => {
+        if (!list || !status) return;
+        list.replaceChildren();
+        const activeId = styleNode()?.dataset.themeId || null;
+        for (const theme of Array.isArray(localThemes) ? localThemes : []) {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.setAttribute("role", "menuitemradio");
+          item.dataset.themeItem = "true";
+          item.dataset.themeId = theme.id;
+          item.setAttribute("aria-checked", theme.id === activeId ? "true" : "false");
+          const label = document.createElement("span");
+          label.textContent = theme.name || theme.id;
+          const marker = document.createElement("span");
+          marker.textContent = theme.id === activeId ? "Active" : "";
+          item.append(label, marker);
+          item.addEventListener("click", () => {
+            const items = [...list.querySelectorAll("[data-theme-item]")];
+            items.forEach((entry) => { entry.disabled = true; });
+            status.textContent = "Applying...";
+            window.open(${applyUrl} + "?id=" + encodeURIComponent(theme.id), "codex-skin-studio-apply", "popup,width=320,height=180");
+            status.textContent = "Switch request sent";
+            menu.hidden = true;
+            button.setAttribute("aria-expanded", "false");
+          });
+          list.appendChild(item);
+        }
+        status.textContent = localThemes.length ? "Local themes" : "No local themes yet";
+      };
+      if (button && menu && !shell.dataset.bound) {
+        button.addEventListener("click", () => {
+          menu.hidden = !menu.hidden;
+          button.setAttribute("aria-expanded", String(!menu.hidden));
+          if (!menu.hidden) renderThemes();
+        });
+        document.addEventListener("click", (event) => {
+          if (!shell.contains(event.target)) {
+            menu.hidden = true;
+            button.setAttribute("aria-expanded", "false");
+          }
+        }, true);
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            menu.hidden = true;
+            button.setAttribute("aria-expanded", "false");
+          }
+        });
+        shell.dataset.bound = "true";
+      }
+      renderThemes();
+    } catch {
+      // The visual skin must still apply when the optional local switcher is unavailable.
+    }
+  })();`;
+}
+
+function styleExpression(theme, hero, logo = null, polaroid = null, themes = []) {
   const style = css(theme, hero, logo, polaroid);
   const logoLoad = logo ? `const logoImage = new Image(); logoImage.src = ${JSON.stringify(logo)}; await logoImage.decode();` : "";
   const polaroidLoad = polaroid ? `const polaroidImage = new Image(); polaroidImage.src = ${JSON.stringify(polaroid)}; await polaroidImage.decode();` : "";
-  return `(async () => { const previous = document.getElementById(${JSON.stringify(STYLE_ID)}); const snapshot = previous ? { present: true, textContent: previous.textContent, themeId: previous.dataset.themeId ?? null, heroLoaded: previous.dataset.heroLoaded ?? null, logoLoaded: previous.dataset.logoLoaded ?? null, polaroidLoaded: previous.dataset.polaroidLoaded ?? null } : { present: false }; const result = { rollback: snapshot }; try { const heroImage = new Image(); heroImage.src = ${JSON.stringify(hero)}; await heroImage.decode(); ${logoLoad} ${polaroidLoad} let node = previous; if (!node) { node = document.createElement("style"); node.id = ${JSON.stringify(STYLE_ID)}; document.head.appendChild(node); } node.dataset.themeId = ${JSON.stringify(theme.id)}; node.dataset.heroLoaded = "true"; node.dataset.logoLoaded = ${JSON.stringify(Boolean(logo))}; node.dataset.polaroidLoaded = ${JSON.stringify(Boolean(polaroid))}; node.textContent = ${JSON.stringify(style)}; const root = document.getElementById("root"); const computed = root ? getComputedStyle(root) : null; return { ...result, connected: Boolean(node.isConnected), themeId: node.dataset.themeId, heroLoaded: node.dataset.heroLoaded === "true", logoLoaded: node.dataset.logoLoaded === "true", polaroidLoaded: node.dataset.polaroidLoaded === "true", cssText: node.textContent.trim(), cssRules: node.sheet ? node.sheet.cssRules.length : 0, rootBackground: Boolean(computed && computed.backgroundImage && computed.backgroundImage !== "none") }; } catch (error) { return { ...result, error: String(error?.message || error) }; } })()`;
+  return `(async () => { const previous = document.getElementById(${JSON.stringify(STYLE_ID)}); const snapshot = previous ? { present: true, textContent: previous.textContent, themeId: previous.dataset.themeId ?? null, heroLoaded: previous.dataset.heroLoaded ?? null, logoLoaded: previous.dataset.logoLoaded ?? null, polaroidLoaded: previous.dataset.polaroidLoaded ?? null } : { present: false }; const result = { rollback: snapshot }; try { const heroImage = new Image(); heroImage.src = ${JSON.stringify(hero)}; await heroImage.decode(); ${logoLoad} ${polaroidLoad} let node = previous; if (!node) { node = document.createElement("style"); node.id = ${JSON.stringify(STYLE_ID)}; document.head.appendChild(node); } node.dataset.themeId = ${JSON.stringify(theme.id)}; node.dataset.heroLoaded = "true"; node.dataset.logoLoaded = ${JSON.stringify(Boolean(logo))}; node.dataset.polaroidLoaded = ${JSON.stringify(Boolean(polaroid))}; node.textContent = ${JSON.stringify(style)}; ${switcherExpression(themes)} const root = document.getElementById("root"); const computed = root ? getComputedStyle(root) : null; return { ...result, connected: Boolean(node.isConnected), themeId: node.dataset.themeId, heroLoaded: node.dataset.heroLoaded === "true", logoLoaded: node.dataset.logoLoaded === "true", polaroidLoaded: node.dataset.polaroidLoaded === "true", cssText: node.textContent.trim(), cssRules: node.sheet ? node.sheet.cssRules.length : 0, rootBackground: Boolean(computed && computed.backgroundImage && computed.backgroundImage !== "none") }; } catch (error) { return { ...result, error: String(error?.message || error) }; } })()`;
 }
 function restoreStyleExpression(snapshot) {
   return `(() => { const node = document.getElementById(${JSON.stringify(STYLE_ID)}); const snapshot = ${JSON.stringify(snapshot)}; if (!snapshot.present) { node?.remove(); return node && node.isConnected ? 0 : 1; } const restored = node || document.createElement("style"); restored.id = ${JSON.stringify(STYLE_ID)}; if (!restored.isConnected) document.head.appendChild(restored); restored.textContent = snapshot.textContent; for (const key of ["themeId", "heroLoaded", "logoLoaded", "polaroidLoaded"]) { const value = snapshot[key] ?? null; if (value === null) delete restored.dataset[key]; else restored.dataset[key] = value; } return restored.isConnected && restored.textContent === snapshot.textContent && (restored.dataset.themeId ?? null) === snapshot.themeId && (restored.dataset.heroLoaded ?? null) === snapshot.heroLoaded && (restored.dataset.logoLoaded ?? null) === (snapshot.logoLoaded ?? null) && (restored.dataset.polaroidLoaded ?? null) === (snapshot.polaroidLoaded ?? null) ? 1 : 0; })()`;
@@ -794,7 +994,8 @@ async function injectTheme(list, saved, { evaluateTarget } = {}) {
   const hero = await dataUrl(join(saved.destination, saved.manifest.hero));
   const logo = saved.manifest.logo ? await dataUrl(join(saved.destination, saved.manifest.logo)) : null;
   const polaroid = saved.manifest.polaroid ? await dataUrl(join(saved.destination, saved.manifest.polaroid)) : null;
-  const expression = styleExpression(saved.manifest, hero, logo, polaroid);
+  const themes = await listThemes();
+  const expression = styleExpression(saved.manifest, hero, logo, polaroid, themes);
   const values = [await evaluate(target, expression)];
   const rollback = typeof values[0]?.rollback === "object" ? async () => {
     const result = await evaluate(target, restoreStyleExpression(values[0].rollback));
@@ -1170,7 +1371,7 @@ async function main() {
   console.log(args.jsonOutput ? json(result) : result.message || json(result));
 }
 
-export { appInfoSync, assetFlags, cancelWorker, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, writeState, EXPECTED_TEAM_ID, Session };
+export { appInfoSync, assetFlags, cancelWorker, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, writeState, EXPECTED_TEAM_ID, Session };
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     const result = fail(commandErrorCode(error), error.message);

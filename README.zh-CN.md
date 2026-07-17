@@ -17,6 +17,7 @@
 - 品牌名只替换顶部 workspace label，不误伤项目 Session 和账户区域。
 - 只通过 `127.0.0.1` 本机 CDP 通信。
 - 可选 macOS LaunchAgent，自动处理登录、应用启动和 Renderer 重载。
+- 对话区域右上角提供 `Skins` 按钮，可以直接切换本地已生成的有效主题。
 - 不修改 `app.asar`，不修改应用签名，不需要网站、数据库、远程服务或任意主题 CSS。
 - Skill 分发文件全部使用英文 ASCII；Skill 可以用中文或其他语言回复用户。
 
@@ -44,7 +45,7 @@ validate -> persist -> apply.mjs -> 本机回环 CDP
                          可选 macOS LaunchAgent
 ```
 
-Skill 负责 Agent 编排；`create-theme.mjs` 负责一次性生成完整主题目录；`apply.mjs` 负责发现经过签名校验的 ChatGPT Desktop、选择主 Renderer、注入并验证样式；`persist.mjs` 负责长期运行的自动恢复 worker。
+Skill 负责 Agent 编排；`create-theme.mjs` 负责一次性生成完整主题目录；`apply.mjs` 负责发现经过签名校验的 ChatGPT Desktop、选择主 Renderer、注入并验证样式；`persist.mjs` 负责长期运行的自动恢复 worker。启用持久化后，worker 还会在 `127.0.0.1:9342` 提供仅本机访问的主题控制接口，右上角 `Skins` 按钮通过主题 ID 切换有效本地主题，不接受任意文件路径或命令。
 
 ## 目录结构
 

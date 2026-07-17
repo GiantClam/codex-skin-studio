@@ -17,6 +17,7 @@ The current application is ChatGPT Desktop. Its technical bundle identifier is `
 - Scoped CSS injection that replaces only the top workspace label and preserves project session controls and account controls.
 - Local-only CDP communication on `127.0.0.1`.
 - Optional macOS LaunchAgent persistence for login, app launch, and renderer reload recovery.
+- Upper-right `Skins` switcher for selecting any valid locally generated theme without leaving the conversation.
 - No `app.asar` modification, code-signature changes, database, website, remote service, or arbitrary theme CSS.
 - English-only Skill distribution files; the Skill can respond to users in their language.
 
@@ -45,6 +46,8 @@ validate -> persist -> apply.mjs -> loopback CDP
 ```
 
 The Skill is the agent layer. `create-theme.mjs` creates a complete local theme directory. `apply.mjs` discovers the signed ChatGPT Desktop app, selects the main renderer, injects one verified style element, persists the theme, and reports a truthful status. `persist.mjs` runs the long-lived recovery worker when persistence is enabled.
+
+When persistence is enabled, the worker also exposes a loopback-only control endpoint on `127.0.0.1:9342`. The injected upper-right `Skins` button uses it to list valid local themes and request a switch by theme id. It reuses the normal validation and CDP application path; it does not accept arbitrary filesystem paths or commands.
 
 ## Repository Layout
 

@@ -260,6 +260,15 @@ The worker uses the active theme state under `~/Library/Application Support/Code
 
 Do not report completion from `scheduled`, `pending`, or `enabled` alone.
 
+When persistence is enabled, the injector also adds a `Skins` button in the
+upper-right corner of the main conversation area. It reads valid local themes
+from the worker's loopback-only control service and applies a selected theme
+through the same validated `apply.mjs` flow. The control service listens only
+on `127.0.0.1:9342`, accepts a theme id rather than a filesystem path, and does
+not expose arbitrary command execution. If the worker is unavailable, the
+button remains non-destructive and reports that local skin switching is
+temporarily unavailable.
+
 ## Inspect or restore
 
 ```bash

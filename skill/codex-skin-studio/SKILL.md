@@ -26,6 +26,7 @@ automatic replacement for the user's active theme.
 - For a style reference, carry over visual traits such as color, materials, lighting, rendering, density, mood, and period. Do not copy its subject or unique composition by default.
 - Do not generate buttons, menus, chat text, watermarks, shortcut instructions, or fake UI. Preserve a source logo only when explicitly requested and authorized.
 - Optional presentation assets are allowed only when explicitly requested: `logo` replaces the ChatGPT workspace label in the left menu, and `polaroid` adds a non-interactive portrait card at the lower right. Every generated theme gets a styled `copy.brand` label when no logo is supplied: use the explicit brand name when provided, otherwise default to the theme name. `copy.headline` and `copy.tagline` create a right-side information card only when explicitly requested; do not add them by default.
+- Do not use one universal brand treatment. After inspecting the final Hero, choose a matching `--brand-style` preset from `anime`, `cyberpunk`, `editorial`, `military`, `mystic`, or `romantic` based on its visual signals: palette, materials, lighting, era, subject, and energy. Store the selected preset as `copy.brandStyle.preset` so the runtime can render theme-specific typography and decoration.
 - The injected `Skins` menu must refresh the loopback `/themes` endpoint when opened and while it remains mounted, so a successfully created local theme appears without restarting ChatGPT Desktop or manually re-injecting CSS. Keep the initial injected list as a fallback when the optional control worker is unavailable.
 - Serialize theme application through the persistence worker. Do not allow the control endpoint and the background renderer-recovery loop to inject different themes at the same time.
 - Keep large raster assets usable in a Renderer stylesheet: decode the Hero first and compress oversized Hero data to a smaller WebP data URL before assigning CSS. Do not rely on a multi-megabyte PNG data URL surviving CSS parsing.
@@ -170,7 +171,8 @@ When the user asks to create and apply, use the one-shot apply path. Do not stop
 2. Create one clean output directory. For generated output, copy the final image returned by `$imagegen` from its reported local output path into that directory; never reference only the cache path. If no local output path is reported, ask for a final local background instead of guessing a cache filename.
 3. For a supplied or directly accepted image, copy it into the output directory as the hero asset.
 4. Derive six-digit hex values for `accent`, `secondary`, `surface`, and `text` from the final hero image.
-5. Use `scripts/create-theme.mjs` once to create the complete theme directory and manifest in one operation. Add `--replace` when replacing an existing generated directory:
+5. Inspect the final Hero for its dominant visual language and select a brand style preset. Use `military` for patriotic, insignia, uniform, or bold national visual language; `anime` for graphic character art; `cyberpunk` for neon, technical, or digital scenes; `mystic` for magic, gothic, occult, or arcane scenes; `romantic` for soft celestial or relationship-focused scenes; and `editorial` for restrained premium or photographic scenes.
+6. Use `scripts/create-theme.mjs` once to create the complete theme directory and manifest in one operation. Add `--replace` when replacing an existing generated directory:
 
 ```bash
 node "$SKILL_ROOT/scripts/create-theme.mjs" \
@@ -183,15 +185,16 @@ node "$SKILL_ROOT/scripts/create-theme.mjs" \
   --surface "#101018" \
   --text "#FFFFFF" \
   --brand "Brand Name" \
+  --brand-style "mystic" \
   --headline "Short headline" \
   --tagline "Short tagline" \
   --replace
 ```
 
-6. Add `--logo` and/or `--polaroid` only when the user explicitly requests those assets and provides or authorizes the source files. Without `--logo`, `create-theme.mjs` defaults `copy.brand` to the theme name; pass `--brand` to override it. The manifest accepts optional `copy.headline` and `copy.tagline` strings.
-7. Keep every final asset as a non-empty local WebP file inside the theme directory. `create-theme.mjs` automatically converts the final Hero, logo, and portrait assets to WebP and updates the manifest; do not manually copy large PNG/JPEG files into the output. Do not add CSS, JavaScript, remote URLs, source copies, transparent intermediates, or reference images.
-8. Immediately run `validate` against the directory. Treat the returned JSON as the creation result and report the exact theme directory and files.
-9. If application was explicitly requested, use the same creator with `--apply` (and `--port` only when needed), or run `apply.mjs apply` immediately after creation. Poll `apply.mjs status` after a `scheduled` result until it is `active`, with a bounded wait. Never call a `scheduled` or `pending` result active.
+7. Add `--logo` and/or `--polaroid` only when the user explicitly requests those assets and provides or authorizes the source files. Without `--logo`, `create-theme.mjs` defaults `copy.brand` to the theme name; pass `--brand` to override it. Pass the selected preset with `--brand-style`; the manifest stores it as `copy.brandStyle.preset`. The manifest accepts optional `copy.headline` and `copy.tagline` strings.
+8. Keep every final asset as a non-empty local WebP file inside the theme directory. `create-theme.mjs` automatically converts the final Hero, logo, and portrait assets to WebP and updates the manifest; do not manually copy large PNG/JPEG files into the output. Do not add CSS, JavaScript, remote URLs, source copies, transparent intermediates, or reference images.
+9. Immediately run `validate` against the directory. Treat the returned JSON as the creation result and report the exact theme directory and files.
+10. If application was explicitly requested, use the same creator with `--apply` (and `--port` only when needed), or run `apply.mjs apply` immediately after creation. Poll `apply.mjs status` after a `scheduled` result until it is `active`, with a bounded wait. Never call a `scheduled` or `pending` result active.
 
 For a single command after the final hero is ready:
 

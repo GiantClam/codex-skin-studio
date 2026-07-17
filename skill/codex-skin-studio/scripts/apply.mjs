@@ -17,6 +17,23 @@ const BUNDLE_ID = "com.openai.codex";
 const APP_DISPLAY_NAME = "ChatGPT Desktop";
 const EXPECTED_TEAM_ID = "2DC432GLL2";
 const SUPPORTED_PLATFORMS = new Set(["darwin", "win32"]);
+const BRAND_STYLE_PRESETS = Object.freeze({
+  anime: { fontFamily: '"Impact", "Arial Narrow", "Helvetica Neue", sans-serif', fontStyle: "normal", fontWeight: 800, letterSpacing: "0.045em", textTransform: "uppercase", fontSize: "16px", fill: "linear-gradient(105deg, var(--codex-skin-accent), var(--codex-skin-text) 48%, var(--codex-skin-secondary))", decoration: "underline", shadow: "0 0 9px color-mix(in srgb, var(--codex-skin-accent) 48%, transparent)" },
+  cyberpunk: { fontFamily: '"SFMono-Regular", "Cascadia Code", "JetBrains Mono", monospace', fontStyle: "normal", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", fontSize: "14px", fill: "linear-gradient(90deg, var(--codex-skin-accent), var(--codex-skin-secondary))", decoration: "glow", shadow: "0 0 5px var(--codex-skin-accent), 0 0 16px color-mix(in srgb, var(--codex-skin-secondary) 58%, transparent)" },
+  editorial: { fontFamily: '"Avenir Next", "Helvetica Neue", Arial, sans-serif', fontStyle: "normal", fontWeight: 650, letterSpacing: "0.04em", textTransform: "none", fontSize: "16px", fill: "var(--codex-skin-text)", decoration: "underline", shadow: "none" },
+  military: { fontFamily: '"Arial Narrow", "Helvetica Neue", Arial, sans-serif', fontStyle: "normal", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", fontSize: "15px", fill: "linear-gradient(90deg, var(--codex-skin-secondary), var(--codex-skin-accent))", decoration: "double-line", shadow: "0 2px 0 color-mix(in srgb, var(--codex-skin-surface) 70%, transparent)" },
+  mystic: { fontFamily: '"Baskerville", "Iowan Old Style", "Palatino Linotype", Georgia, serif', fontStyle: "italic", fontWeight: 700, letterSpacing: "0.015em", textTransform: "none", fontSize: "17px", fill: "linear-gradient(110deg, var(--codex-skin-accent), var(--codex-skin-text) 48%, var(--codex-skin-secondary))", decoration: "glow", shadow: "0 0 10px color-mix(in srgb, var(--codex-skin-accent) 42%, transparent)" },
+  romantic: { fontFamily: '"Snell Roundhand", "Bradley Hand", "Segoe Print", cursive', fontStyle: "italic", fontWeight: 600, letterSpacing: "0.01em", textTransform: "none", fontSize: "18px", fill: "linear-gradient(105deg, var(--codex-skin-secondary), var(--codex-skin-text) 52%, var(--codex-skin-accent))", decoration: "underline", shadow: "0 2px 12px color-mix(in srgb, var(--codex-skin-secondary) 44%, transparent)" },
+});
+function inferredBrandStylePreset(theme) {
+  const value = `${theme?.id || ""} ${theme?.name || ""}`.toLowerCase();
+  if (/cyber|neon|tech|future|matrix|synth/.test(value)) return "cyberpunk";
+  if (/patriot|military|gold|maga|navy|army/.test(value)) return "military";
+  if (/naruto|anime|miku|idol|ninja/.test(value)) return "anime";
+  if (/slayer|xellos|magic|mystic|arcane|night/.test(value)) return "mystic";
+  if (/love|deep|star|romance|dream/.test(value)) return "romantic";
+  return "editorial";
+}
 function appDataRoot(platformName = platform()) {
   if (platformName === "win32") return process.env.APPDATA || join(homedir(), "AppData", "Roaming");
   if (platformName === "darwin") return join(homedir(), "Library", "Application Support");
@@ -110,12 +127,17 @@ function validateManifest(manifest) {
   let copy;
   if (manifest.copy !== undefined && manifest.copy !== null) {
     if (typeof manifest.copy !== "object" || Array.isArray(manifest.copy)) throw new Error("theme copy must be an object");
-    const copyKeys = new Set(["brand", "headline", "tagline"]);
+    const copyKeys = new Set(["brand", "headline", "tagline", "brandStyle"]);
     for (const key of Object.keys(manifest.copy)) if (!copyKeys.has(key)) throw new Error(`unsupported copy field: ${key}`);
     const limits = { brand: 80, headline: 140, tagline: 120 };
     copy = {};
     for (const key of copyKeys) {
       if (manifest.copy[key] === undefined) continue;
+      if (key === "brandStyle") {
+        if (!manifest.copy[key] || typeof manifest.copy[key] !== "object" || Array.isArray(manifest.copy[key]) || typeof manifest.copy[key].preset !== "string" || !Object.hasOwn(BRAND_STYLE_PRESETS, manifest.copy[key].preset)) throw new Error("copy.brandStyle.preset must be a supported brand style");
+        copy.brandStyle = { preset: manifest.copy[key].preset };
+        continue;
+      }
       if (typeof manifest.copy[key] !== "string" || !manifest.copy[key].trim() || manifest.copy[key].trim().length > limits[key]) throw new Error(`copy.${key} must be 1 to ${limits[key]} characters`);
       copy[key] = manifest.copy[key].trim();
     }
@@ -503,6 +525,31 @@ function css(theme, hero, logo = null, polaroid = null) {
   const onAccent = readableOn(theme.colors.accent, [theme.colors.surface, theme.colors.text]);
   const copyText = theme.copy ? [theme.copy.headline, theme.copy.tagline].filter(Boolean).join("\\A ") : "";
   const brandButtonSelector = '.app-shell-left-panel nav > div:first-child > div:first-child > button[aria-haspopup="menu"]';
+  const brandPreset = theme.copy?.brandStyle?.preset || inferredBrandStylePreset(theme);
+  const brandStyle = BRAND_STYLE_PRESETS[brandPreset] || BRAND_STYLE_PRESETS.editorial;
+  const brandDecoration = brandStyle.decoration === "double-line" ? `
+${brandButtonSelector}::after {
+  position: absolute;
+  right: 26px;
+  bottom: 0;
+  left: 8px;
+  height: 4px;
+  border-top: 1px solid var(--codex-skin-accent);
+  border-bottom: 1px solid var(--codex-skin-secondary);
+  content: "";
+  pointer-events: none;
+}` : brandStyle.decoration === "none" ? "" : `
+${brandButtonSelector}::after {
+  position: absolute;
+  right: 26px;
+  bottom: 1px;
+  left: 8px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--codex-skin-accent), var(--codex-skin-secondary), transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--codex-skin-accent) 58%, transparent);
+  content: "";
+  pointer-events: none;
+}`;
   const brandFallbackCss = theme.copy?.brand && !logo ? `
 ${brandButtonSelector} {
   position: relative;
@@ -526,31 +573,22 @@ ${brandButtonSelector} > span.truncate::after {
   content: ${JSON.stringify(theme.copy.brand)};
   display: block;
   overflow: visible;
-  background: linear-gradient(110deg, var(--codex-skin-accent), var(--codex-skin-text) 48%, var(--codex-skin-secondary));
+  background: ${brandStyle.fill};
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
-  font-family: "Baskerville", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-  font-size: 17px;
-  font-style: italic;
-  font-weight: 700;
-  letter-spacing: 0.015em;
+  color: ${brandStyle.fill.startsWith("linear-gradient") ? "transparent" : "var(--codex-skin-text)"};
+  font-family: ${brandStyle.fontFamily};
+  font-size: ${brandStyle.fontSize};
+  font-style: ${brandStyle.fontStyle};
+  font-weight: ${brandStyle.fontWeight};
+  letter-spacing: ${brandStyle.letterSpacing};
   line-height: 1.25;
-  text-shadow: 0 0 10px color-mix(in srgb, var(--codex-skin-accent) 42%, transparent);
+  text-transform: ${brandStyle.textTransform};
+  text-shadow: ${brandStyle.shadow};
   white-space: nowrap;
 }
 
-${brandButtonSelector}::after {
-  position: absolute;
-  right: 26px;
-  bottom: 1px;
-  left: 8px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--codex-skin-accent), var(--codex-skin-secondary), transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--codex-skin-accent) 58%, transparent);
-  content: "";
-  pointer-events: none;
-}
+${brandDecoration}
 ` : "";
   const logoCss = logo ? `
 ${brandButtonSelector} {
@@ -1578,7 +1616,7 @@ async function main() {
   console.log(args.jsonOutput ? json(result) : result.message || json(result));
 }
 
-export { appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
+export { BRAND_STYLE_PRESETS, appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     const result = fail(commandErrorCode(error), error.message);

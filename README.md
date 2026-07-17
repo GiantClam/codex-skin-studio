@@ -17,6 +17,7 @@ The current application is ChatGPT Desktop. macOS identifies it with bundle iden
 - Five-zone visual contract for safe ChatGPT Desktop composition.
 - One-shot theme creation with `hero`, `theme.json`, optional logo, optional portrait card, and optional brand copy.
 - Automatic styled brand label: without a logo or explicit `--brand`, the theme name becomes the left navigation brand.
+- Theme-specific brand styling: the Skill selects an `anime`, `cyberpunk`, `editorial`, `military`, `mystic`, or `romantic` treatment from the Hero's visual language instead of applying one universal font style.
 - Scoped CSS injection that replaces only the top workspace label and preserves project session controls and account controls.
 - Local-only CDP communication on `127.0.0.1`.
 - Optional macOS LaunchAgent or Windows Task Scheduler persistence for login, app launch, and renderer reload recovery.
@@ -238,7 +239,7 @@ The runtime core is a local hero image and `theme.json`:
 }
 ```
 
-Only `schemaVersion`, `id`, `name`, `hero`, and the four colors are required by the current Skill workflow. `logo` replaces the top workspace label with an authorized local asset. Without a logo, `copy.brand` replaces the live label with scoped styled text and defaults to the theme name when created by `create-theme.mjs`. `headline` and `tagline` are optional and create a right-side information card only when explicitly requested. `polaroid` is a non-interactive lower-right asset.
+Only `schemaVersion`, `id`, `name`, `hero`, and the four colors are required by the current Skill workflow. `logo` replaces the top workspace label with an authorized local asset. Without a logo, `copy.brand` replaces the live label with scoped styled text and defaults to the theme name when created by `create-theme.mjs`. `copy.brandStyle.preset` records the Hero-matched typography treatment. `headline` and `tagline` are optional and create a right-side information card only when explicitly requested. `polaroid` is a non-interactive lower-right asset.
 
 Current runtime media support is PNG, JPEG, and WebP. GIF and video backgrounds are not enabled in this MVP; they require additional animation and media-lifecycle validation.
 

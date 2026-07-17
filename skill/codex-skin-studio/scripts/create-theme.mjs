@@ -7,7 +7,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { commandApply, loadTheme, validateManifest } from "./apply.mjs";
+import { BRAND_STYLE_PRESETS, commandApply, loadTheme, validateManifest } from "./apply.mjs";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 const REQUIRED_COLORS = ["accent", "secondary", "surface", "text"];
@@ -54,6 +54,23 @@ function optionalCopy(values, defaultBrand = null) {
     if (key !== "brand" && value !== undefined) copy[key] = String(value).trim();
   }
   return Object.keys(copy).length ? copy : undefined;
+}
+
+function inferredBrandStyle(id, name) {
+  const value = `${id} ${name}`.toLowerCase();
+  if (/cyber|neon|tech|future|matrix|synth/.test(value)) return "cyberpunk";
+  if (/patriot|military|gold|maga|navy|army/.test(value)) return "military";
+  if (/naruto|anime|miku|idol|ninja/.test(value)) return "anime";
+  if (/slayer|xellos|magic|mystic|arcane|night/.test(value)) return "mystic";
+  if (/love|deep|star|romance|dream/.test(value)) return "romantic";
+  return "editorial";
+}
+
+function brandStylePreset(values, id, name, hasLogo) {
+  const requested = values.get("brand-style");
+  if (requested !== undefined && !Object.hasOwn(BRAND_STYLE_PRESETS, requested)) throw new Error(`brand style must be one of: ${Object.keys(BRAND_STYLE_PRESETS).join(", ")}`);
+  if (requested) return requested;
+  return hasLogo ? null : inferredBrandStyle(id, name);
 }
 
 async function assertImage(file, label) {
@@ -135,7 +152,9 @@ async function createTheme(values) {
   }
 
   const colors = Object.fromEntries(REQUIRED_COLORS.map((key) => [key, required(values, key)]));
-  const copy = optionalCopy(values, assets.logo ? null : name);
+  const copy = optionalCopy(values, assets.logo ? null : name) || {};
+  const preset = brandStylePreset(values, id, name, Boolean(assets.logo));
+  if (preset) copy.brandStyle = { preset };
   const manifest = validateManifest({
     schemaVersion: 1,
     id,
@@ -143,7 +162,7 @@ async function createTheme(values) {
     hero: assetName("hero"),
     ...(assets.logo ? { logo: assetName("logo") } : {}),
     ...(assets.polaroid ? { polaroid: assetName("polaroid") } : {}),
-    ...(copy ? { copy } : {}),
+    ...(Object.keys(copy).length ? { copy } : {}),
     colors,
   });
 

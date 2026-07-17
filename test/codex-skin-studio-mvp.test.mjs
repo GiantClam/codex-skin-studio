@@ -54,6 +54,7 @@ test("rejects unsupported fields and invalid manifest values", () => {
   assert.throws(() => validateManifest({ ...validManifest, id: "Cyberpunk Night" }), /theme id/);
   assert.throws(() => validateManifest({ ...validManifest, hero: "../hero.png" }), /hero must be/);
   assert.throws(() => validateManifest({ ...validManifest, colors: { ...validManifest.colors, accent: "red" } }), /accent must be/);
+  assert.throws(() => validateManifest({ ...validManifest, copy: { brand: "Brand", brandStyle: { preset: "unknown" } } }), /copy.brandStyle.preset/);
 });
 
 test("parses command, theme directory, flags, and port", () => {
@@ -231,11 +232,21 @@ test("emits inert brand workbench copy", () => {
 test("uses the brand copy as a left navigation fallback without a logo", () => {
   const value = css({ ...validManifest, copy: { brand: "SLAYERS // XELLOS" } }, "data:image/png;base64,AA");
   assert.match(value, /nav > div:first-child > div:first-child > button\[aria-haspopup="menu"\]/);
-  assert.match(value, /font-family: "Baskerville"/);
+  assert.match(value, /font-family: "SFMono-Regular"/);
   assert.match(value, /background-clip: text/);
   assert.match(value, /content: "SLAYERS \/\/ XELLOS"/);
   assert.match(value, /box-shadow: 0 0 8px/);
   assert.doesNotMatch(value, /body::before/);
+});
+
+test("renders distinct brand typography for selected visual presets", () => {
+  const military = css({ ...validManifest, copy: { brand: "PATRIOT // GOLD", brandStyle: { preset: "military" } } }, "data:image/png;base64,AA");
+  const romantic = css({ ...validManifest, copy: { brand: "LOVE // DEEPSPACE", brandStyle: { preset: "romantic" } } }, "data:image/png;base64,AA");
+  assert.match(military, /font-family: "Arial Narrow"/);
+  assert.match(military, /border-top: 1px solid var\(--codex-skin-accent\)/);
+  assert.match(romantic, /font-family: "Snell Roundhand"/);
+  assert.match(romantic, /font-size: 18px/);
+  assert.notEqual(military, romantic);
 });
 
 test("emits light color scheme for a light surface", () => {
@@ -302,7 +313,7 @@ test("defaults the generated brand label to the theme name without a logo", asyn
       "--hero", hero,
       "--accent", "#D9A441", "--secondary", "#B5312B", "--surface", "#050D20", "--text", "#FFFFFF",
     ]);
-    assert.deepEqual(JSON.parse(stdout).manifest.copy, { brand: "Patriot Gold Workbench" });
+    assert.deepEqual(JSON.parse(stdout).manifest.copy, { brand: "Patriot Gold Workbench", brandStyle: { preset: "military" } });
   });
 });
 

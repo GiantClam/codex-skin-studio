@@ -720,7 +720,7 @@ mark,
 
 #${SWITCHER_ID} {
   position: fixed;
-  top: 8px;
+  top: clamp(88px, 12vh, 112px);
   right: clamp(156px, 14vw, 208px);
   z-index: 90;
   color: var(--codex-skin-text);

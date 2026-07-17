@@ -121,6 +121,7 @@ test("emits the local skin switcher button and control routes", () => {
   const value = css(validManifest, "data:image/png;base64,AA");
   const expression = styleExpression(validManifest, "data:image/png;base64,AA", null, null, [{ id: "miku", name: "Miku" }]);
   assert.match(value, /#codex-skin-studio-switcher/);
+  assert.match(value, /top: clamp\(88px, 12vh, 112px\)/);
   assert.match(value, /right: clamp\(156px, 14vw, 208px\)/);
   assert.match(value, /min-width: 104px/);
   assert.match(value, /min-height: 40px/);

@@ -2,10 +2,9 @@
 
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as winPath } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve, sep, win32 as winPath } from "node:path";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir, homedir, platform as hostPlatform } from "node:os";
-import { createHash } from "node:crypto";
+import { homedir, platform as hostPlatform } from "node:os";
 
 const require = createRequire(import.meta.url);
 let sharp = null;
@@ -26,16 +25,33 @@ const PET_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 const DEFAULT_MAX_INPUT_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MAX_ATLAS_BYTES = 20 * 1024 * 1024;
+const PET_SPRITE_VERSION = 2;
+const DEFAULT_ROWS = [
+  { name: "idle", frames: 6 },
+  { name: "running-right", frames: 8 },
+  { name: "running-left", frames: 8 },
+  { name: "waving", frames: 4 },
+  { name: "jumping", frames: 5 },
+  { name: "failed", frames: 8 },
+  { name: "waiting", frames: 6 },
+  { name: "running", frames: 6 },
+  { name: "review", frames: 6 },
+  { name: "look-000-to-157.5", frames: 8 },
+  { name: "look-180-to-337.5", frames: 8 },
+];
 
 export const DEFAULT_PET_CONTRACT = {
   schemaVersion: PET_CONTRACT_SCHEMA,
-  contractVersion: "chatgpt-desktop-pet-8x9-provisional",
-  status: "provisional",
-  source: "codex-skin-studio-template",
-  grid: { columns: 8, rows: 9 },
+  contractVersion: "codex-v2-hatch-pet",
+  status: "observed",
+  source: "ChatGPT Desktop hatch-pet Codex V2 Pet Contract",
+  spriteVersionNumber: PET_SPRITE_VERSION,
+  grid: { columns: 8, rows: 11 },
   frame: { width: 192, height: 208 },
-  spritesheet: { format: "webp", colorMode: "rgba", maxBytes: DEFAULT_MAX_ATLAS_BYTES },
-  rows: ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"],
+  spritesheet: { format: ["webp", "png"], colorMode: "rgba", maxBytes: DEFAULT_MAX_ATLAS_BYTES },
+  rows: DEFAULT_ROWS,
+  neutralLookFrame: { row: 0, column: 6 },
+  lookDirections: ["000", "022.5", "045", "067.5", "090", "112.5", "135", "157.5", "180", "202.5", "225", "247.5", "270", "292.5", "315", "337.5"],
 };
 
 export function petError(code, message, details = undefined) {
@@ -100,16 +116,40 @@ function maxAtlasBytes(contract) {
   return contract.spritesheet?.maxBytes || DEFAULT_MAX_ATLAS_BYTES;
 }
 
+function rowSpec(row) {
+  return typeof row === "string" ? { name: row, frames: 8 } : row;
+}
+
+function rowSpecs(contract) {
+  return contract.rows.map(rowSpec);
+}
+
+function rowName(row) {
+  return rowSpec(row).name;
+}
+
+function rowFrameCount(row) {
+  return rowSpec(row).frames;
+}
+
 export function validateContract(contract, { allowProvisional = false } = {}) {
   if (!contract || typeof contract !== "object") throw petError("PET_CONTRACT_MISMATCH", "pet contract must be an object");
   if (contract.schemaVersion !== PET_CONTRACT_SCHEMA) throw petError("PET_CONTRACT_MISMATCH", `unsupported pet contract schema: ${contract.schemaVersion}`);
   if (typeof contract.contractVersion !== "string" || !contract.contractVersion.trim()) throw petError("PET_CONTRACT_MISMATCH", "pet contract version is required");
   if (!allowProvisional && contract.status !== "observed") throw petError("PET_CONTRACT_MISMATCH", "pet contract is provisional; capture an observed hatch-pet contract first");
-  if (!contract.grid || contract.grid.columns !== 8 || contract.grid.rows !== 9) throw petError("PET_CONTRACT_MISMATCH", "the current MVP requires an observed 8x9 pet atlas contract");
+  if (contract.spriteVersionNumber !== PET_SPRITE_VERSION) throw petError("PET_CONTRACT_MISMATCH", "the current ChatGPT Desktop contract requires spriteVersionNumber 2");
+  if (!contract.grid || contract.grid.columns !== 8 || contract.grid.rows !== 11) throw petError("PET_CONTRACT_MISMATCH", "the current ChatGPT Desktop contract requires an observed 8x11 pet atlas");
   assertInteger(contract.frame?.width, "frame.width");
   assertInteger(contract.frame?.height, "frame.height");
-  if (!Array.isArray(contract.rows) || contract.rows.length !== contract.grid.rows || contract.rows.some((row) => typeof row !== "string" || !row.trim())) throw petError("PET_CONTRACT_MISMATCH", "pet contract must define exactly nine named rows");
-  if (contract.spritesheet?.format !== "webp" || contract.spritesheet?.colorMode !== "rgba") throw petError("PET_CONTRACT_MISMATCH", "pet contract must require RGBA WebP output");
+  if (!Array.isArray(contract.rows) || contract.rows.length !== contract.grid.rows) throw petError("PET_CONTRACT_MISMATCH", "pet contract must define exactly eleven rows");
+  const specs = rowSpecs(contract);
+  if (specs.some((row) => !row || typeof row.name !== "string" || !row.name.trim() || !Number.isInteger(row.frames) || row.frames < 1 || row.frames > contract.grid.columns)) throw petError("PET_CONTRACT_MISMATCH", "every pet row must define a name and one through eight frames");
+  if (new Set(specs.map((row) => row.name)).size !== specs.length) throw petError("PET_CONTRACT_MISMATCH", "pet contract row names must be unique");
+  if (specs.some((row, index) => row.name !== DEFAULT_ROWS[index].name || row.frames !== DEFAULT_ROWS[index].frames)) throw petError("PET_CONTRACT_MISMATCH", "pet contract rows must match the Codex V2 animation and look-direction layout");
+  if (!contract.neutralLookFrame || contract.neutralLookFrame.row !== 0 || contract.neutralLookFrame.column !== 6) throw petError("PET_CONTRACT_MISMATCH", "v2 pet contract must reserve row 0 column 6 for the neutral look frame");
+  if (!Array.isArray(contract.lookDirections) || contract.lookDirections.length !== 16) throw petError("PET_CONTRACT_MISMATCH", "v2 pet contract must define sixteen look directions");
+  const formats = Array.isArray(contract.spritesheet?.format) ? contract.spritesheet.format : [contract.spritesheet?.format];
+  if ((!formats.includes("webp") && !formats.includes("png")) || contract.spritesheet?.colorMode !== "rgba") throw petError("PET_CONTRACT_MISMATCH", "pet contract must require transparent RGBA PNG or WebP output");
   if (contract.spritesheet.maxBytes !== undefined && (!Number.isInteger(contract.spritesheet.maxBytes) || contract.spritesheet.maxBytes < 1 || contract.spritesheet.maxBytes > 100 * 1024 * 1024)) throw petError("PET_CONTRACT_MISMATCH", "spritesheet.maxBytes must be between 1 and 104857600");
   return contract;
 }
@@ -143,10 +183,6 @@ async function assertImage(file) {
   return path;
 }
 
-function hashBuffer(buffer) {
-  return createHash("sha256").update(buffer).digest("hex");
-}
-
 async function chromaKeyBuffer(file) {
   const image = requireSharp();
   const { data, info } = await image(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -166,9 +202,34 @@ async function chromaKeyBuffer(file) {
 async function frameSource(file, { chromaKey = true } = {}) {
   const path = await assertImage(file);
   const input = await readFile(path);
-  if (!chromaKey) return { path, buffer: input, sourceHash: hashBuffer(input), removedPixels: 0 };
+  if (!chromaKey) return { path, buffer: input, removedPixels: 0 };
   const processed = await chromaKeyBuffer(path);
-  return { path, buffer: processed.buffer, sourceHash: hashBuffer(input), removedPixels: processed.removed };
+  return { path, buffer: processed.buffer, removedPixels: processed.removed };
+}
+
+async function encodeSpriteSheet(composites, width, height, formats) {
+  const sharpImage = requireSharp();
+  const { data, info } = await sharpImage({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite(composites)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] === 0) {
+      data[index] = 0;
+      data[index + 1] = 0;
+      data[index + 2] = 0;
+    }
+  }
+  const webp = await sharpImage(data, { raw: info }).webp({ lossless: true, quality: 100, alphaQuality: 100, effort: 6, exact: true }).toBuffer();
+  const decoded = await sharpImage(webp).ensureAlpha().raw().toBuffer();
+  let residue = 0;
+  for (let index = 0; index < decoded.length; index += 4) {
+    if (decoded[index + 3] === 0 && (decoded[index] !== 0 || decoded[index + 1] !== 0 || decoded[index + 2] !== 0)) residue += 1;
+  }
+  if (residue === 0 && formats.includes("webp")) return { buffer: webp, extension: "webp" };
+  if (!formats.includes("png")) throw petError("PET_SPRITESHEET_INVALID", "the selected contract permits WebP only, but the encoder produced transparent RGB residue; allow PNG output or use a lossless WebP encoder");
+  return { buffer: await sharpImage(data, { raw: info }).png().toBuffer(), extension: "png" };
 }
 
 function frameManifestFromOptions(options, contract) {
@@ -182,17 +243,21 @@ async function loadFrameManifest(file, contract) {
   if (!manifest || typeof manifest !== "object" || !manifest.rows || typeof manifest.rows !== "object") throw petError("PET_INPUT_INVALID", "frame manifest must contain rows");
   if (manifest.contractVersion !== contract.contractVersion) throw petError("PET_CONTRACT_MISMATCH", "frame manifest contractVersion does not match the selected pet contract");
   const rows = {};
-  for (const rowName of contract.rows) {
-    const row = manifest.rows[rowName];
-    if (!row || !Array.isArray(row.frames) || row.frames.length !== contract.grid.columns) throw petError("PET_INPUT_INVALID", `row ${rowName} must contain exactly ${contract.grid.columns} frames`);
-    rows[rowName] = row.frames.map((file) => {
+  for (const row of rowSpecs(contract)) {
+    const rowName = row.name;
+    const rowEntry = manifest.rows[rowName];
+    if (!rowEntry || !Array.isArray(rowEntry.frames) || rowEntry.frames.length !== rowFrameCount(row)) throw petError("PET_INPUT_INVALID", `row ${rowName} must contain exactly ${rowFrameCount(row)} frames`);
+    rows[rowName] = rowEntry.frames.map((file) => {
       if (typeof file !== "string" || !file.trim()) throw petError("PET_INPUT_INVALID", `row ${rowName} contains an invalid frame path`);
       return file.trim();
     });
   }
   const base = dirname(resolve(file));
-  for (const rowName of contract.rows) rows[rowName] = rows[rowName].map((frame) => assertInside(base, resolve(base, frame), "frame"));
-  return { rows, source: file };
+  for (const row of rowSpecs(contract)) rows[row.name] = rows[row.name].map((frame) => assertInside(base, resolve(base, frame), "frame"));
+  let neutralFrame = manifest.neutralFrame;
+  if (neutralFrame !== undefined && (typeof neutralFrame !== "string" || !neutralFrame.trim())) throw petError("PET_INPUT_INVALID", "neutralFrame must be a non-empty relative image path");
+  neutralFrame = neutralFrame ? assertInside(base, resolve(base, neutralFrame), "neutralFrame") : rows.idle[0];
+  return { rows, neutralFrame, source: file };
 }
 
 export async function createPet({ id, displayName, description, frames, out, contract, replace = false, chromaKey = true } = {}) {
@@ -208,28 +273,29 @@ export async function createPet({ id, displayName, description, frames, out, con
     const frameWidth = contract.frame.width;
     const frameHeight = contract.frame.height;
     const composites = [];
-    const hashes = {};
     for (let rowIndex = 0; rowIndex < contract.rows.length; rowIndex += 1) {
-      const rowName = contract.rows[rowIndex];
-      for (let column = 0; column < contract.grid.columns; column += 1) {
+      const row = rowSpec(contract.rows[rowIndex]);
+      const rowName = row.name;
+      for (let column = 0; column < rowFrameCount(row); column += 1) {
         const source = await frameSource(sourceManifest.rows[rowName][column], { chromaKey });
-        hashes[`${rowName}:${column}`] = source.sourceHash;
         const resized = await image(source.buffer).resize({ width: frameWidth, height: frameHeight, fit: "contain", position: "center", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
         composites.push({ input: resized, left: column * frameWidth, top: rowIndex * frameHeight });
       }
     }
-    const atlasPath = join(staging, "spritesheet.webp");
-    const atlas = await image({ create: { width: frameWidth * contract.grid.columns, height: frameHeight * contract.grid.rows, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite(composites).webp({ quality: 86, alphaQuality: 100, effort: 4 }).toBuffer();
-    if (atlas.length > maxAtlasBytes(contract)) throw petError("PET_SPRITESHEET_INVALID", `generated spritesheet exceeds ${maxAtlasBytes(contract)} bytes`);
-    await writeFile(atlasPath, atlas);
+    const neutral = await frameSource(sourceManifest.neutralFrame, { chromaKey });
+    const neutralResized = await image(neutral.buffer).resize({ width: frameWidth, height: frameHeight, fit: "contain", position: "center", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+    composites.push({ input: neutralResized, left: contract.neutralLookFrame.column * frameWidth, top: contract.neutralLookFrame.row * frameHeight });
+    const formats = Array.isArray(contract.spritesheet.format) ? contract.spritesheet.format : [contract.spritesheet.format];
+    const encoded = await encodeSpriteSheet(composites, frameWidth * contract.grid.columns, frameHeight * contract.grid.rows, formats);
+    const atlasPath = join(staging, `spritesheet.${encoded.extension}`);
+    if (encoded.buffer.length > maxAtlasBytes(contract)) throw petError("PET_SPRITESHEET_INVALID", `generated spritesheet exceeds ${maxAtlasBytes(contract)} bytes`);
+    await writeFile(atlasPath, encoded.buffer);
     const manifest = {
       id: petId,
       displayName: String(displayName || petId).trim(),
       description: String(description || "A cute anthropomorphic desktop companion.").trim(),
-      spritesheetPath: "spritesheet.webp",
-      contractVersion: contract.contractVersion,
-      visualContract: { style: "cartoon", anthropomorphic: true, headToBody: "large-head-small-body" },
-      sourceFrameHashes: hashes,
+      spriteVersionNumber: contract.spriteVersionNumber,
+      spritesheetPath: `spritesheet.${encoded.extension}`,
     };
     await writeJsonFile(join(staging, "pet.json"), manifest);
     await validatePetDirectory(staging, { contract, allowProvisional: false });
@@ -240,7 +306,7 @@ export async function createPet({ id, displayName, description, frames, out, con
       if (error.code !== "ENOENT") throw error;
     }
     await commitDirectory(staging, output, replace);
-    return { status: "created", id: petId, directory: output, manifestPath: join(output, "pet.json"), spritesheetPath: join(output, "spritesheet.webp"), contractVersion: contract.contractVersion };
+    return { status: "created", id: petId, directory: output, manifestPath: join(output, "pet.json"), spritesheetPath: join(output, `spritesheet.${encoded.extension}`), contractVersion: contract.contractVersion, format: encoded.extension };
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
     throw error;
@@ -261,7 +327,11 @@ async function validateCorners(file) {
   const { data, info } = await image(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const points = [[0, 0], [info.width - 1, 0], [0, info.height - 1], [info.width - 1, info.height - 1]];
   const alpha = points.map(([x, y]) => data[(y * info.width + x) * 4 + 3]);
-  return { width: info.width, height: info.height, hasAlpha: info.channels === 4, cornerAlpha: alpha, cornersTransparent: alpha.every((value) => value === 0) };
+  let transparentRgbResidue = 0;
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] === 0 && (data[index] !== 0 || data[index + 1] !== 0 || data[index + 2] !== 0)) transparentRgbResidue += 1;
+  }
+  return { width: info.width, height: info.height, hasAlpha: info.channels === 4, cornerAlpha: alpha, cornersTransparent: alpha.every((value) => value === 0), transparentRgbResidue };
 }
 
 async function validateFrameCells(file, contract) {
@@ -271,6 +341,7 @@ async function validateFrameCells(file, contract) {
   const frameHeight = contract.frame.height;
   const frames = [];
   for (let row = 0; row < contract.grid.rows; row += 1) {
+    const rowSpecValue = rowSpec(contract.rows[row]);
     for (let column = 0; column < contract.grid.columns; column += 1) {
       let left = frameWidth;
       let top = frameHeight;
@@ -287,10 +358,16 @@ async function validateFrameCells(file, contract) {
           bottom = Math.max(bottom, y);
         }
       }
+      const isNeutral = contract.neutralLookFrame.row === row && contract.neutralLookFrame.column === column;
+      const isUsed = column < rowFrameCount(rowSpecValue) || isNeutral;
+      if (!isUsed) {
+        if (right >= 0) throw petError("PET_SPRITESHEET_INVALID", `unused frame ${row}:${column} must be fully transparent`);
+        continue;
+      }
       if (right < 0) throw petError("PET_SPRITESHEET_INVALID", `frame ${row}:${column} contains no visible character`);
       const padding = Math.min(left, top, frameWidth - 1 - right, frameHeight - 1 - bottom);
       if (padding < Math.floor(Math.min(frameWidth, frameHeight) * 0.02)) throw petError("PET_SPRITESHEET_INVALID", `frame ${row}:${column} is cropped or lacks safe padding`);
-      frames.push({ row, column, left, top, right, bottom, width: right - left + 1, height: bottom - top + 1, padding });
+      frames.push({ row, name: rowSpecValue.name, column, left, top, right, bottom, width: right - left + 1, height: bottom - top + 1, padding, neutral: isNeutral });
     }
   }
   return { frameCount: frames.length, frames };
@@ -303,18 +380,19 @@ export async function validatePetDirectory(directory, { contract, allowProvision
   const manifest = await readJsonFile(manifestPath, "PET_MANIFEST_INVALID");
   assertPetId(manifest.id);
   if (typeof manifest.displayName !== "string" || !manifest.displayName.trim()) throw petError("PET_MANIFEST_INVALID", "pet displayName is required");
-  if (manifest.contractVersion !== contract.contractVersion) throw petError("PET_CONTRACT_MISMATCH", "pet manifest contractVersion does not match the selected contract");
-  if (!manifest.visualContract || manifest.visualContract.style !== "cartoon" || manifest.visualContract.anthropomorphic !== true || manifest.visualContract.headToBody !== "large-head-small-body") throw petError("PET_MANIFEST_INVALID", "pet manifest must declare the cartoon anthropomorphic large-head-small-body visual contract");
+  if (manifest.spriteVersionNumber !== contract.spriteVersionNumber) throw petError("PET_CONTRACT_MISMATCH", "pet manifest spriteVersionNumber does not match the selected contract");
+  if (manifest.contractVersion !== undefined && manifest.contractVersion !== contract.contractVersion) throw petError("PET_CONTRACT_MISMATCH", "pet manifest contractVersion does not match the selected contract");
   if (typeof manifest.spritesheetPath !== "string" || isAbsolute(manifest.spritesheetPath)) throw petError("PET_MANIFEST_INVALID", "spritesheetPath must be relative");
   const spritesheet = assertInside(root, join(root, manifest.spritesheetPath), "spritesheet");
   const extension = extname(spritesheet).toLowerCase();
-  if (extension !== ".webp" && extension !== ".png") throw petError("PET_MANIFEST_INVALID", "spritesheet must be WebP or PNG");
+  const allowedFormats = Array.isArray(contract.spritesheet.format) ? contract.spritesheet.format : [contract.spritesheet.format];
+  if (!allowedFormats.includes(extension.slice(1))) throw petError("PET_MANIFEST_INVALID", `spritesheet must use one of: ${allowedFormats.join(", ")}`);
   const details = await stat(spritesheet).catch((error) => { throw petError("PET_IMAGE_INVALID", `spritesheet does not exist: ${spritesheet}`, { cause: error.message }); });
   if (!details.isFile() || details.size === 0 || details.size > maxAtlasBytes(contract)) throw petError("PET_SPRITESHEET_INVALID", `spritesheet is empty or exceeds ${maxAtlasBytes(contract)} bytes`);
   const imageInfo = await validateCorners(spritesheet);
   const expected = { width: contract.frame.width * contract.grid.columns, height: contract.frame.height * contract.grid.rows };
   if (imageInfo.width !== expected.width || imageInfo.height !== expected.height) throw petError("PET_SPRITESHEET_INVALID", `spritesheet must be ${expected.width}x${expected.height}`);
-  if (!imageInfo.hasAlpha || !imageInfo.cornersTransparent) throw petError("PET_ALPHA_INVALID", "spritesheet must contain RGBA alpha with transparent corners", imageInfo);
+  if (!imageInfo.hasAlpha || !imageInfo.cornersTransparent || imageInfo.transparentRgbResidue > 0) throw petError("PET_ALPHA_INVALID", "spritesheet must contain RGBA alpha, transparent corners, and zero RGB in transparent pixels", imageInfo);
   const frames = await validateFrameCells(spritesheet, contract);
   return { status: "valid", id: manifest.id, directory: root, manifestPath, spritesheet, dimensions: imageInfo, frames, contractVersion: contract.contractVersion };
 }
@@ -361,7 +439,7 @@ export async function listInstalledPets({ petsDir = defaultPetsDir() } = {}) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     try {
       const manifest = await readJsonFile(join(root, entry.name, "pet.json"), "PET_MANIFEST_INVALID");
-      result.push({ id: manifest.id, displayName: manifest.displayName, directory: join(root, entry.name), contractVersion: manifest.contractVersion });
+      result.push({ id: manifest.id, displayName: manifest.displayName, directory: join(root, entry.name), spriteVersionNumber: manifest.spriteVersionNumber, contractVersion: manifest.contractVersion || null });
     } catch { /* Ignore unrelated directories in the user Pet root. */ }
   }
   return result.sort((left, right) => left.id.localeCompare(right.id));

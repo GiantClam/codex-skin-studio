@@ -2,11 +2,6 @@
   "id": "mascot",
   "displayName": "Studio Mascot",
   "description": "A cute anthropomorphic large-head small-body workspace companion.",
-  "spritesheetPath": "spritesheet.webp",
-  "contractVersion": "chatgpt-desktop-pet-8x9-provisional",
-  "visualContract": {
-    "style": "cartoon",
-    "anthropomorphic": true,
-    "headToBody": "large-head-small-body"
-  }
+  "spriteVersionNumber": 2,
+  "spritesheetPath": "spritesheet.webp"
 }

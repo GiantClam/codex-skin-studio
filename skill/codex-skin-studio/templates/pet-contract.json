@@ -1,30 +1,38 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "chatgpt-desktop-pet-8x9-provisional",
-  "status": "provisional",
-  "source": "codex-skin-studio-template",
+  "contractVersion": "codex-v2-hatch-pet",
+  "status": "observed",
+  "source": "ChatGPT Desktop hatch-pet Codex V2 Pet Contract",
+  "spriteVersionNumber": 2,
   "grid": {
     "columns": 8,
-    "rows": 9
+    "rows": 11
   },
   "frame": {
     "width": 192,
     "height": 208
   },
   "spritesheet": {
-    "format": "webp",
+    "format": ["webp", "png"],
     "colorMode": "rgba",
     "maxBytes": 20971520
   },
   "rows": [
-    "idle",
-    "running-right",
-    "running-left",
-    "waving",
-    "jumping",
-    "failed",
-    "waiting",
-    "running",
-    "review"
+    { "name": "idle", "frames": 6 },
+    { "name": "running-right", "frames": 8 },
+    { "name": "running-left", "frames": 8 },
+    { "name": "waving", "frames": 4 },
+    { "name": "jumping", "frames": 5 },
+    { "name": "failed", "frames": 8 },
+    { "name": "waiting", "frames": 6 },
+    { "name": "running", "frames": 6 },
+    { "name": "review", "frames": 6 },
+    { "name": "look-000-to-157.5", "frames": 8 },
+    { "name": "look-180-to-337.5", "frames": 8 }
+  ],
+  "neutralLookFrame": { "row": 0, "column": 6 },
+  "lookDirections": [
+    "000", "022.5", "045", "067.5", "090", "112.5", "135", "157.5",
+    "180", "202.5", "225", "247.5", "270", "292.5", "315", "337.5"
   ]
 }

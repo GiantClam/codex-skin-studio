@@ -25,7 +25,7 @@ The current application is ChatGPT Desktop. macOS identifies it with bundle iden
 - The `Skins` menu refreshes valid local themes on open and in the background, so newly created themes appear without restarting ChatGPT Desktop.
 - Oversized raster Heroes are decoded and compressed to a smaller WebP data URL before CSS injection, avoiding stylesheet limits that can silently drop the background rule.
 - Theme creation also converts the final Hero, logo, and portrait assets to `.webp` on disk and updates `theme.json` automatically.
-- Contract-driven Pet generation: cartoonized, anthropomorphic, large-head/small-body companions assembled into validated 8x9 RGBA WebP atlases.
+- Contract-driven Pet generation: cartoonized, anthropomorphic, large-head/small-body companions assembled into validated Codex V2 8x11 RGBA PNG/WebP atlases with 16 look directions.
 - Paired theme + Pet bundles with atomic Pet installation, local status reporting, and one switch command that applies the theme and reports the required Pets Refresh step.
 - No `app.asar` modification, code-signature changes, database, website, remote service, or arbitrary theme CSS.
 - English-only Skill distribution files; the Skill can respond to users in their language.

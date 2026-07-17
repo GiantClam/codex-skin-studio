@@ -35,13 +35,28 @@ const validManifest = {
 
 const observedPetContract = {
   schemaVersion: 1,
-  contractVersion: "observed-test-8x9",
+  contractVersion: "observed-test-v2",
   status: "observed",
   source: "test",
-  grid: { columns: 8, rows: 9 },
+  spriteVersionNumber: 2,
+  grid: { columns: 8, rows: 11 },
   frame: { width: 16, height: 16 },
-  spritesheet: { format: "webp", colorMode: "rgba" },
-  rows: ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"],
+  spritesheet: { format: ["webp", "png"], colorMode: "rgba" },
+  rows: [
+    { name: "idle", frames: 6 },
+    { name: "running-right", frames: 8 },
+    { name: "running-left", frames: 8 },
+    { name: "waving", frames: 4 },
+    { name: "jumping", frames: 5 },
+    { name: "failed", frames: 8 },
+    { name: "waiting", frames: 6 },
+    { name: "running", frames: 6 },
+    { name: "review", frames: 6 },
+    { name: "look-000-to-157.5", frames: 8 },
+    { name: "look-180-to-337.5", frames: 8 },
+  ],
+  neutralLookFrame: { row: 0, column: 6 },
+  lookDirections: ["000", "022.5", "045", "067.5", "090", "112.5", "135", "157.5", "180", "202.5", "225", "247.5", "270", "292.5", "315", "337.5"],
 };
 
 async function withTempDir(prefix, callback) {
@@ -63,10 +78,10 @@ async function makePetFrames(root, contract = observedPetContract) {
   const framesRoot = join(root, "frames");
   await mkdir(framesRoot, { recursive: true });
   const pixel = await sharp(Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"><circle cx=\"8\" cy=\"6\" r=\"4\" fill=\"#ffccaa\"/><rect x=\"5\" y=\"10\" width=\"6\" height=\"5\" rx=\"2\" fill=\"#6750a4\"/></svg>")).png().toBuffer();
-  const rows = Object.fromEntries(contract.rows.map((row) => [row, { frames: Array.from({ length: contract.grid.columns }, (_, index) => `${row}-${String(index).padStart(2, "0")}.png`) }]));
-  for (const row of contract.rows) for (const frame of rows[row].frames) await writeFile(join(framesRoot, frame), pixel);
+  const rows = Object.fromEntries(contract.rows.map((row) => [row.name, { frames: Array.from({ length: row.frames }, (_, index) => `${row.name}-${String(index).padStart(2, "0")}.png`) }]));
+  for (const row of contract.rows) for (const frame of rows[row.name].frames) await writeFile(join(framesRoot, frame), pixel);
   const manifestPath = join(framesRoot, "frames.json");
-  await writeFile(manifestPath, JSON.stringify({ contractVersion: contract.contractVersion, rows }));
+  await writeFile(manifestPath, JSON.stringify({ contractVersion: contract.contractVersion, neutralFrame: rows.idle.frames[0], rows }));
   return manifestPath;
 }
 
@@ -1283,7 +1298,8 @@ test("restart-normal state reflects confirmed removal on pending and spawn failu
 test("pet contracts reject provisional data until the observed contract is supplied", () => {
   assert.throws(() => validateContract({ ...observedPetContract, status: "provisional" }), /provisional/);
   assert.deepEqual(validateContract(observedPetContract), observedPetContract);
-  assert.throws(() => validateContract({ ...observedPetContract, grid: { columns: 4, rows: 9 } }), /8x9/);
+  assert.throws(() => validateContract({ ...observedPetContract, grid: { columns: 4, rows: 11 } }), /8x11/);
+  assert.throws(() => validateContract({ ...observedPetContract, spriteVersionNumber: 1 }), /spriteVersionNumber 2/);
 });
 
 test("resolves Pet roots for macOS and Windows without hard-coded user paths", () => {
@@ -1297,8 +1313,17 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", asyn
     const frames = await makePetFrames(root);
     const created = await createPet({ id: "test-pet", displayName: "Test Pet", frames, out: join(root, "pet"), contract: observedPetContract });
     assert.equal(created.status, "created");
+    const createdManifest = JSON.parse(await readFile(join(root, "pet", "pet.json"), "utf8"));
+    assert.deepEqual(createdManifest, {
+      id: "test-pet",
+      displayName: "Test Pet",
+      description: "A cute anthropomorphic desktop companion.",
+      spriteVersionNumber: 2,
+      spritesheetPath: createdManifest.spritesheetPath,
+    });
+    assert.ok(["spritesheet.webp", "spritesheet.png"].includes(createdManifest.spritesheetPath));
     const validated = await validatePetDirectory(join(root, "pet"), { contract: observedPetContract });
-    assert.deepEqual(validated.dimensions, { width: 128, height: 144, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true });
+    assert.deepEqual(validated.dimensions, { width: 128, height: 176, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true, transparentRgbResidue: 0 });
     const installed = await installPet(join(root, "pet"), { petsDir: join(root, "pets"), contract: observedPetContract });
     assert.equal(installed.status, "installed");
     assert.equal(installed.selection, "refresh-required");
@@ -1309,9 +1334,9 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", asyn
   });
 });
 
-test("example Pet matches the public 1536x1872 and 20 MiB baseline", async () => {
+test("example Pet matches the observed v2 1536x2288 and 20 MiB contract", async () => {
   const validation = await validatePetDirectory(join(skillRoot, "examples/pets/mascot"), { contract: DEFAULT_PET_CONTRACT, allowProvisional: true });
-  assert.deepEqual(validation.dimensions, { width: 1536, height: 1872, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true });
+  assert.deepEqual(validation.dimensions, { width: 1536, height: 2288, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true, transparentRgbResidue: 0 });
   assert.ok((await readFile(validation.spritesheet)).length <= 20 * 1024 * 1024);
 });
 

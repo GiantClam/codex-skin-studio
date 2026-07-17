@@ -25,7 +25,7 @@
 - `Skins` 菜单打开时和运行期间会自动刷新本地主题，新创建的主题无需重启 ChatGPT Desktop 即可出现。
 - 过大的 PNG/JPG 主背景会先在 Renderer 中解码并压缩为较小的 WebP Data URL，避免 CSS 过大导致背景规则被静默丢弃。
 - 主题生成阶段也会自动把 Hero、Logo、肖像卡转换为 `.webp` 并同步更新 `theme.json`。
-- 支持配套 Pet 生成：Pet 必须卡通化、拟人化、大头小身体，并组装为可校验的 8×9 RGBA WebP 精灵图。
+- 支持配套 Pet 生成：Pet 必须卡通化、拟人化、大头小身体，并组装为可校验的 Codex V2 8×11 RGBA PNG/WebP 精灵图，包含 16 个视角方向。
 - 支持主题 + Pet 配套 Bundle、原子安装、本地状态查询和一次性配套切换命令。
 - 不修改 `app.asar`，不修改应用签名，不需要网站、数据库、远程服务或任意主题 CSS。
 - Skill 分发文件全部使用英文 ASCII；Skill 可以用中文或其他语言回复用户。

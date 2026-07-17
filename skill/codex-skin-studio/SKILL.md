@@ -249,7 +249,7 @@ character's identity or defining details.
 2. Classify each image as `subject/object`, `style-reference`, `composition/layout-reference`, or `brand/logo`.
 3. Preserve the subject's identity, silhouette, hairstyle, clothing, colors, materials, markings, and accessories before applying the cartoon mascot transformation.
 4. Generate one canonical character reference first.
-5. Generate one action at a time using the canonical reference. Do not ask Image Generation to draw the final 8x9 atlas in one call.
+5. Generate one action or direction strip at a time using the canonical reference. Do not ask Image Generation to draw the final 8x11 atlas in one call; the 8x9 standard-row atlas is only an intermediate assembly artifact.
 6. Include `large head and small body`, `cute anthropomorphic cartoon`, and a friendly expressive face in every Pet action prompt.
 7. Use a flat `#00FF00` background for generated action images when native transparency is not available. Do not retain the chroma-key background in the installed atlas.
 8. Inspect the generated reference and action frames with Vision. Reject a frame if the character is photorealistic, no longer anthropomorphic, loses the large-head/small-body ratio, changes identity, contains extra content, or is cropped.
@@ -257,18 +257,17 @@ character's identity or defining details.
 
 ### Pet contract gate
 
-Pet assembly is contract-driven. Use the current observed contract captured from
-the official `hatch-pet` Skill and ChatGPT Desktop. The repository template at
-`templates/pet-contract.json` is provisional and must not be used for normal
-installation. The scripts reject provisional contracts unless the explicit
-`--allow-provisional` flag is used for local tests only.
+Pet assembly is contract-driven. The repository template at
+`templates/pet-contract.json` records the observed Codex V2 contract from the
+bundled official `hatch-pet` Skill: `spriteVersionNumber: 2`, an 8x11 atlas,
+192x208 cells, nine standard animation rows, and two rows containing sixteen
+clockwise look directions. A newly packaged Pet must be the full 1536x2288
+atlas; the 1536x1872 8x9 atlas is intermediate only.
 
-The public Web Pet baseline is transparent PNG or WebP at exactly 1536x1872
-pixels and no larger than 20 MiB. The default provisional contract matches this
-baseline with an 8x9 atlas of 192x208 frames, but the Web baseline is not proof
-of a frozen ChatGPT Desktop `hatch-pet` manifest or row mapping. Desktop
-selection remains `Settings > Pets > Refresh`, choose the matching Pet, then
-`/pet` until a supported native selector and a real postcondition are observed.
+The public Web Pet baseline is also transparent PNG or WebP at exactly 1536x1872
+pixels and no larger than 20 MiB, but it is not the Desktop packaging contract.
+Do not replace the observed Desktop v2 contract with the Web baseline. A test
+contract marked provisional may be used only with `--allow-provisional`.
 
 Before implementing or shipping a new contract, record the ChatGPT Desktop
 version and platform, hatch-pet version or generation date, manifest fields,
@@ -276,25 +275,28 @@ spritesheet format, column count, row count, frame dimensions, row semantics,
 and Settings > Pets > Refresh and `/pet` results.
 
 Never infer an animation row mapping from a community example. If the observed
-contract is not 8 columns by 9 rows, stop with `PET_CONTRACT_MISMATCH` and update
-the versioned contract adapter before generating a Pet.
+contract changes, stop with `PET_CONTRACT_MISMATCH` and update the versioned
+contract before generating or installing a Pet.
 
 ### Pet input and assembly
 
-Create a frame manifest with one list of frames per observed row. Each row must
-contain exactly eight frame paths for the current 8x9 contract:
+Create a frame manifest with one list of frames per observed row. Standard rows
+use their contract frame counts; the two look-direction rows use eight frames
+each. Include `neutralFrame` for the reserved row 0 column 6:
 
 ```json
 {
   "contractVersion": "observed-contract-version",
+  "neutralFrame": "idle-00.png",
   "rows": {
-    "idle": { "frames": ["idle-00.png", "idle-01.png"] }
+    "idle": { "frames": ["idle-00.png", "idle-01.png", "idle-02.png", "idle-03.png", "idle-04.png", "idle-05.png"] },
+    "look-000-to-157.5": { "frames": ["look-000.png", "look-022.5.png", "look-045.png", "look-067.5.png", "look-090.png", "look-112.5.png", "look-135.png", "look-157.5.png"] }
   }
 }
 ```
 
-The example is abbreviated; production input must include every contract row
-and every frame. Use the deterministic local tools:
+The example is abbreviated; production input must include all eleven contract
+rows and every frame. Use the deterministic local tools:
 
 ```bash
 node "$SKILL_ROOT/scripts/create-pet.mjs" \
@@ -319,11 +321,12 @@ node "$SKILL_ROOT/scripts/install-pet.mjs" \
 ```
 
 `create-pet.mjs` performs chroma-key removal, fixed-size contain scaling,
-transparent canvas composition, RGBA WebP encoding, and manifest creation.
-`validate-pet.mjs` checks the manifest, contract version, dimensions, alpha
-channel, transparent corners, paths, and file size. Vision remains responsible
-for semantic checks that pixels alone cannot prove. `install-pet.mjs` uses an
-atomic sibling-directory replacement and never deletes another Pet ID.
+transparent canvas composition, neutral-frame insertion, RGBA WebP encoding,
+and v2 manifest creation. `validate-pet.mjs` checks the manifest,
+`spriteVersionNumber`, row frame counts, unused-cell transparency, dimensions,
+alpha channel, transparent corners, paths, and file size. Vision remains
+responsible for semantic checks that pixels alone cannot prove. `install-pet.mjs`
+uses an atomic sibling-directory replacement and never deletes another Pet ID.
 
 Supported stable errors include `PET_INPUT_INVALID`, `PET_CONTRACT_MISMATCH`,
 `PET_IMAGE_INVALID`, `PET_ALPHA_INVALID`, `PET_SPRITESHEET_INVALID`,
@@ -352,7 +355,8 @@ node "$SKILL_ROOT/scripts/create-paired.mjs" \
 ```
 
 The output contains `bundle.json`, `theme/theme.json`, `theme/hero.webp`,
-`pet/pet.json`, and `pet/spritesheet.webp`.
+`pet/pet.json`, and the contract-selected `pet/spritesheet.webp` or
+`pet/spritesheet.png`.
 
 When the user asks to switch the pair, run:
 

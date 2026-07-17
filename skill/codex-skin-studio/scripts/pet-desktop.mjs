@@ -44,6 +44,7 @@ function commandFailure(error, fallback = "PET_NATIVE_UI_UNAVAILABLE") {
 }
 
 export const PET_UI_STATE_EXPRESSION = `(() => ({
+  settingsSlugs: [...document.querySelectorAll('[data-settings-panel-slug]')].map((node) => node.getAttribute('data-settings-panel-slug')).filter(Boolean),
   settings: Boolean(document.querySelector('[data-settings-panel-slug]')),
   petsPanel: Boolean(document.querySelector('[data-settings-panel-slug="pets"][aria-current="page"]') || [...document.querySelectorAll('button,[role="button"]')].some((node) => /refresh\\s+(custom\\s+)?pets?|custom\\s+pets?/i.test((node.getAttribute('aria-label') || '') + ' ' + (node.textContent || '')))),
   customPetIds: [...document.querySelectorAll('[data-avatar-id^="custom:"]')].map((node) => node.getAttribute('data-avatar-id').slice(7)),
@@ -155,17 +156,19 @@ async function currentTarget(port) {
 async function waitForExpression(port, expression, predicate, { timeoutMs = SETTINGS_TIMEOUT_MS, delayMs = UI_POLL_MS } = {}) {
   const started = Date.now();
   let lastError = null;
+  let lastValue = null;
   while (Date.now() - started <= timeoutMs) {
     try {
       const target = await currentTarget(port);
       const value = await evaluateTarget(target, expression);
+      lastValue = value;
       if (predicate(value)) return { target, value };
     } catch (error) {
       lastError = error;
     }
     await delay(delayMs);
   }
-  throw petError("PET_NATIVE_UI_TIMEOUT", "ChatGPT Desktop Pet settings did not reach the expected state", { cause: lastError?.message || null });
+  throw petError("PET_NATIVE_UI_TIMEOUT", "ChatGPT Desktop Pet settings did not reach the expected state", { cause: lastError?.message || null, lastValue });
 }
 
 async function waitForState(port, predicate, options = {}) {

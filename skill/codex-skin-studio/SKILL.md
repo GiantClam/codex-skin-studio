@@ -28,6 +28,7 @@ automatic replacement for the user's active theme.
 - Optional presentation assets are allowed only when explicitly requested: `logo` replaces the ChatGPT workspace label in the left menu, `polaroid` adds a non-interactive portrait card at the lower right, and `copy.brand`, `copy.headline`, or `copy.tagline` define brand workbench text. `copy.brand` replaces the live workspace label in the left navigation with styled text when no logo is supplied. `copy.headline` and `copy.tagline` create a right-side information card only when explicitly requested; do not add them by default.
 - The injected `Skins` menu must refresh the loopback `/themes` endpoint when opened and while it remains mounted, so a successfully created local theme appears without restarting ChatGPT Desktop or manually re-injecting CSS. Keep the initial injected list as a fallback when the optional control worker is unavailable.
 - Serialize theme application through the persistence worker. Do not allow the control endpoint and the background renderer-recovery loop to inject different themes at the same time.
+- Keep large raster assets usable in a Renderer stylesheet: decode the Hero first and compress oversized Hero data to a smaller WebP data URL before assigning CSS. Do not rely on a multi-megabyte PNG data URL surviving CSS parsing.
 - Write every distributed artifact, script comment, diagnostic, log message, example, and template in English ASCII. Reply in the user's language.
 
 ## Brand workbench composition contract

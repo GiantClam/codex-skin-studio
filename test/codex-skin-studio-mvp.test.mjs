@@ -104,6 +104,9 @@ test("emits dark CSS variables and a quoted hero URL", () => {
   assert.match(value, /background: color-mix\(in srgb, var\(--codex-skin-surface\) 88%, transparent\)/);
   assert.match(value, /backdrop-filter: blur\(20px\) saturate\(1\.12\)/);
   assert.match(value, /backdrop-filter: blur\(18px\) saturate\(1\.08\)/);
+  const expression = styleExpression(validManifest, `data:image/png;base64,${"A".repeat(600001)}`);
+  assert.match(expression, /canvas\.toDataURL\("image\/webp", 0\.82\)/);
+  assert.match(expression, /replace\("__CODEX_SKIN_HERO_URL__", heroUrl\)/);
 });
 
 test("emits high-contrast workbench tokens for controls, menus, and previews", () => {

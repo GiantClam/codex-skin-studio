@@ -16,7 +16,7 @@ jobs:
       - name: Install and start ChatGPT Desktop
         shell: pwsh
         run: |
-          winget install --id=9NT1R1C2HH7J --source=msstore --accept-package-agreements --accept-source-agreements --silent
+          winget install --id=9PLM9XGG6VKS --source=msstore --accept-package-agreements --accept-source-agreements --silent
           powershell -NoProfile -ExecutionPolicy Bypass -File `
             'skill\codex-skin-studio\scripts\windows\apply.ps1' `
             -ThemeDir 'skill\codex-skin-studio\examples\slayers-xellos-night' -Force

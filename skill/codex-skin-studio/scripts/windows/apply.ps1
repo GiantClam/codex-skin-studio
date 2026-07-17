@@ -65,7 +65,7 @@ function Test-Cdp {
 function Get-StorePackage {
     Get-AppxPackage -ErrorAction SilentlyContinue |
         Where-Object { -not $_.IsFramework -and ($_.Name -match "^OpenAI\." -or $_.Name -match "ChatGPT|Codex") } |
-        Sort-Object { $_.Publisher -match "OpenAI" } -Descending |
+        Sort-Object @{ Expression = { if ($_.Name -match "^OpenAI\.Codex") { 0 } elseif ($_.Name -match "Codex") { 1 } else { 2 } } }, @{ Expression = { $_.Publisher -match "OpenAI" }; Descending = $true } |
         Select-Object -First 1
 }
 
@@ -81,7 +81,7 @@ function Get-StoreAumid {
 }
 
 function Get-LaunchTarget {
-    $running = Get-Process -Name ChatGPT -ErrorAction SilentlyContinue |
+    $running = Get-Process -Name ChatGPT, Codex -ErrorAction SilentlyContinue |
         Where-Object { $_.Path } |
         Select-Object -First 1
     if ($running.Path -match "\\WindowsApps\\") {
@@ -110,17 +110,17 @@ function Get-LaunchTarget {
 }
 
 function Close-Codex {
-    $running = @(Get-Process -Name ChatGPT -ErrorAction SilentlyContinue)
+    $running = @(Get-Process -Name ChatGPT, Codex -ErrorAction SilentlyContinue)
     if (-not $running) { return }
     $running | ForEach-Object { $_.CloseMainWindow() | Out-Null }
     for ($index = 0; $index -lt 60; $index++) {
-        if (-not (Get-Process -Name ChatGPT -ErrorAction SilentlyContinue)) { return }
+        if (-not (Get-Process -Name ChatGPT, Codex -ErrorAction SilentlyContinue)) { return }
         Start-Sleep -Milliseconds 250
     }
     if ($Force) {
-        Get-Process -Name ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process -Name ChatGPT, Codex -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
-        if (-not (Get-Process -Name ChatGPT -ErrorAction SilentlyContinue)) { return }
+        if (-not (Get-Process -Name ChatGPT, Codex -ErrorAction SilentlyContinue)) { return }
     }
     throw "Codex is still running. Close it from the taskbar or Task Manager and rerun this script."
 }
@@ -177,7 +177,7 @@ try {
         }
         if (-not $ready) {
             $flagged = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -in @("ChatGPT.exe", "codex.exe") -and $_.CommandLine -match "remote-debugging-port" }
+                Where-Object { $_.Name -in @("ChatGPT.exe", "Codex.exe", "codex.exe") -and $_.CommandLine -match "remote-debugging-port" }
             if ($flagged) { throw "Codex received the remote-debugging flag but did not open port $Port" }
             throw "Codex did not preserve the remote-debugging arguments"
         }

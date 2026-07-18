@@ -25,6 +25,8 @@ const PET_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 const DEFAULT_MAX_INPUT_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MAX_ATLAS_BYTES = 20 * 1024 * 1024;
+const MOTION_PIXEL_DELTA = 12;
+const MOTION_PIXEL_FRACTION = 0.001;
 const PET_SPRITE_VERSION = 2;
 const DEFAULT_ROWS = [
   { name: "idle", frames: 6 },
@@ -373,6 +375,43 @@ async function validateFrameCells(file, contract) {
   return { frameCount: frames.length, frames };
 }
 
+async function validateFrameMotion(file, contract) {
+  const image = requireSharp();
+  const { data, info } = await image(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const frameWidth = contract.frame.width;
+  const frameHeight = contract.frame.height;
+  const minimumDifferingPixels = Math.max(32, Math.floor(frameWidth * frameHeight * MOTION_PIXEL_FRACTION));
+  const rows = [];
+  for (let row = 0; row < contract.grid.rows; row += 1) {
+    const rowSpecValue = rowSpec(contract.rows[row]);
+    const frameCount = rowFrameCount(rowSpecValue);
+    const pairs = [];
+    for (let column = 1; column < frameCount; column += 1) {
+      let differingPixels = 0;
+      let differenceEnergy = 0;
+      for (let y = 0; y < frameHeight; y += 1) {
+        for (let x = 0; x < frameWidth; x += 1) {
+          const left = ((row * frameHeight + y) * info.width + (column - 1) * frameWidth + x) * 4;
+          const right = ((row * frameHeight + y) * info.width + column * frameWidth + x) * 4;
+          const delta = Math.abs(data[left] - data[right]) + Math.abs(data[left + 1] - data[right + 1]) + Math.abs(data[left + 2] - data[right + 2]) + Math.abs(data[left + 3] - data[right + 3]);
+          if (delta > MOTION_PIXEL_DELTA) {
+            differingPixels += 1;
+            differenceEnergy += delta;
+          }
+        }
+      }
+      pairs.push({ from: column - 1, to: column, differingPixels, differenceEnergy });
+    }
+    const hasZeroMotionPair = pairs.some((pair) => pair.differingPixels === 0);
+    const hasReadableMotionPair = pairs.some((pair) => pair.differingPixels >= minimumDifferingPixels);
+    if (pairs.length > 0 && (hasZeroMotionPair || !hasReadableMotionPair)) {
+      throw petError("PET_ANIMATION_INVALID", `animation row ${rowSpecValue.name} contains static or imperceptible frame transitions`, { row, minimumDifferingPixels, pairs });
+    }
+    rows.push({ row, name: rowSpecValue.name, frameCount, animated: true, pairs });
+  }
+  return { minimumDifferingPixels, rows, animatedRows: rows.filter((row) => row.animated).map((row) => row.name) };
+}
+
 export async function validatePetDirectory(directory, { contract, allowProvisional = false } = {}) {
   validateContract(contract, { allowProvisional });
   const root = resolve(directory);
@@ -394,7 +433,8 @@ export async function validatePetDirectory(directory, { contract, allowProvision
   if (imageInfo.width !== expected.width || imageInfo.height !== expected.height) throw petError("PET_SPRITESHEET_INVALID", `spritesheet must be ${expected.width}x${expected.height}`);
   if (!imageInfo.hasAlpha || !imageInfo.cornersTransparent || imageInfo.transparentRgbResidue > 0) throw petError("PET_ALPHA_INVALID", "spritesheet must contain RGBA alpha, transparent corners, and zero RGB in transparent pixels", imageInfo);
   const frames = await validateFrameCells(spritesheet, contract);
-  return { status: "valid", id: manifest.id, directory: root, manifestPath, spritesheet, dimensions: imageInfo, frames, contractVersion: contract.contractVersion };
+  const motion = await validateFrameMotion(spritesheet, contract);
+  return { status: "valid", id: manifest.id, directory: root, manifestPath, spritesheet, dimensions: imageInfo, frames, motion, contractVersion: contract.contractVersion };
 }
 
 export async function installPet(directory, { petsDir = defaultPetsDir(), contract, replace = false, allowProvisional = false, dryRun = false } = {}) {

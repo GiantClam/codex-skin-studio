@@ -79,12 +79,15 @@ async function makeTheme(root, manifest = validManifest) {
   await writeFile(join(root, "hero.png"), Buffer.from([1]));
 }
 
-async function makePetFrames(root, contract = observedPetContract) {
+async function makePetFrames(root, contract = observedPetContract, { animate = true } = {}) {
   const framesRoot = join(root, "frames");
   await mkdir(framesRoot, { recursive: true });
-  const pixel = await sharp(Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"><circle cx=\"8\" cy=\"6\" r=\"4\" fill=\"#ffccaa\"/><rect x=\"5\" y=\"10\" width=\"6\" height=\"5\" rx=\"2\" fill=\"#6750a4\"/></svg>")).png().toBuffer();
   const rows = Object.fromEntries(contract.rows.map((row) => [row.name, { frames: Array.from({ length: row.frames }, (_, index) => `${row.name}-${String(index).padStart(2, "0")}.png`) }]));
-  for (const row of contract.rows) for (const frame of rows[row.name].frames) await writeFile(join(framesRoot, frame), pixel);
+  for (const row of contract.rows) for (const [index, frame] of rows[row.name].frames.entries()) {
+    const shift = animate ? index % 3 : 0;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="${8 + shift}" cy="${6 - shift}" r="4" fill="#ffccaa"/><rect x="${5 - shift}" y="${10 + shift}" width="6" height="5" rx="2" fill="#6750a4"/></svg>`;
+    await writeFile(join(framesRoot, frame), await sharp(Buffer.from(svg)).png().toBuffer());
+  }
   const manifestPath = join(framesRoot, "frames.json");
   await writeFile(manifestPath, JSON.stringify({ contractVersion: contract.contractVersion, neutralFrame: rows.idle.frames[0], rows }));
   return manifestPath;
@@ -1338,6 +1341,7 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", { sk
     assert.ok(["spritesheet.webp", "spritesheet.png"].includes(createdManifest.spritesheetPath));
     const validated = await validatePetDirectory(join(root, "pet"), { contract: observedPetContract });
     assert.deepEqual(validated.dimensions, { width: 128, height: 176, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true, transparentRgbResidue: 0 });
+    assert.deepEqual(validated.motion.animatedRows, observedPetContract.rows.map((row) => row.name));
     const installed = await installPet(join(root, "pet"), { petsDir: join(root, "pets"), contract: observedPetContract });
     assert.equal(installed.status, "installed");
     assert.equal(installed.selection, "refresh-required");
@@ -1345,6 +1349,16 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", { sk
     const status = await petStatus({ petsDir: join(root, "pets") });
     assert.equal(status.active, "test-pet");
     assert.equal(status.pets[0].id, "test-pet");
+  });
+});
+
+test("rejects a static atlas whose action rows contain duplicated frames", { skip: !sharp && "sharp is unavailable" }, async () => {
+  await withTempDir("codex-pet-static-", async (root) => {
+    const frames = await makePetFrames(root, observedPetContract, { animate: false });
+    await assert.rejects(
+      createPet({ id: "static-pet", displayName: "Static Pet", frames, out: join(root, "pet"), contract: observedPetContract }),
+      (error) => error.code === "PET_ANIMATION_INVALID" && /static|imperceptible/.test(error.message),
+    );
   });
 });
 

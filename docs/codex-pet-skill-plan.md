@@ -476,6 +476,7 @@ skill/codex-skin-studio/
 - 图像有 RGBA alpha 通道；
 - 图集尺寸可被 8 和 9 整除；
 - 每个动作行至少包含有效帧；
+- 每个动作和 look-direction 行的每一对相邻帧必须存在可见像素差异，且至少有一对达到可读动作阈值，禁止把同一张静态图复制到整行动作帧；
 - 角色没有被明显裁切；
 - 四角透明；
 - 帧间头身比例和脚底基线稳定。
@@ -483,7 +484,7 @@ skill/codex-skin-studio/
 验证分为两层：
 
 1. **机器验证**：文件、路径、尺寸、alpha、边界、契约版本、哈希和大小限制。
-2. **Vision 验证**：卡通化、拟人化、大头小身体、角色一致性、表情可读性和绿边。机器验证通过不代表视觉验收通过。
+2. **Vision 验证**：卡通化、拟人化、大头小身体、角色一致性、表情可读性、动作连贯性和绿边。机器验证通过不代表视觉验收通过。
 
 ### `install-pet.mjs`
 
@@ -686,7 +687,7 @@ Codex 原生 Image Generation
 - Pet 图集生成、chroma-key 去背景、RGBA WebP 输出、Codex V2 `1536 × 2288` / 8 × 11 / `spriteVersionNumber: 2` 校验、未使用单元格透明校验、manifest 校验、原子安装和本地状态查询已经实现；
 - 配套主题 + Pet Bundle 创建、配套切换和合并状态查询已经实现；
 - 英文 `SKILL.md` 已加入 Pet 和配套 Bundle 编排规则；
-- 自动化回归测试为 `88/88`，Windows 路径、PowerShell 设置入口和安装契约测试为 `3/3`；最新 Windows workflow `29590065014` 已从 Microsoft Store `OpenAI.Codex` 安装包读取 `hatch-pet/references/codex-pet-contract.md`，通过 `verify-pet-contract.mjs` 独立确认 v2 格式，再由 `verify-pet-desktop.mjs` 要求真实 selected-row 和 loaded-sprite postcondition；
+- 自动化回归测试为 `89/89`，Windows 路径、PowerShell 设置入口和安装契约测试为 `3/3`；Pet 校验新增动作帧差异检查，静态重复帧会以 `PET_ANIMATION_INVALID` 拒绝；最新 Windows workflow `29590065014` 已从 Microsoft Store `OpenAI.Codex` 安装包读取 `hatch-pet/references/codex-pet-contract.md`，通过 `verify-pet-contract.mjs` 独立确认 v2 格式，再由 `verify-pet-desktop.mjs` 要求真实 selected-row 和 loaded-sprite postcondition；
 - 当前模板 contract 已更新为随 ChatGPT Desktop 提供的 Codex V2 observed contract；`--allow-provisional` 仅保留给未来契约变更的开发测试；
 - 本机 ChatGPT Desktop `26.715.21316` 已发现官方 `hatch-pet` 资源契约；已通过当前 Renderer 的可见 Settings > Pets 控件真实完成 Refresh、匹配 Pet 选择、selected-row postcondition 和 embedded custom WebP sprite loaded postcondition，适配器版本为 `chatgpt-desktop-pets-settings-v1`；Windows workflow 已确认 MSIX 内的同一 v2 契约，但干净 Runner 仍缺少可见 Settings/Pets UI，原生选择仍缺少已登录桌面验证；实测 `/pet` 返回 “isn’t a recognized command here”，因此不作为当前版本唤醒路径。
 

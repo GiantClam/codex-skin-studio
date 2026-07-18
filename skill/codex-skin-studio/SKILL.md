@@ -278,6 +278,28 @@ character's identity or defining details.
 8. Inspect the generated reference and action frames with Vision. Reject a frame if the character is photorealistic, no longer anthropomorphic, loses the large-head/small-body ratio, changes identity, contains extra content, or is cropped.
 9. If native Image Generation is unavailable, report its exact error and stop. Do not call an external image service or request an API key automatically.
 
+Use an explicit sequential pose brief for every row; never reuse one generated
+image for all frame files in a row:
+
+- `idle`: six calm breathing or blink variations with a readable but subtle
+  head, chest, eye, hair, or prop change.
+- `running-right` and `running-left`: eight alternating locomotion poses with
+  opposite facing direction, changing feet, arms, body lean, and prop position.
+- `waving`: four frames for hand down, hand rising, hand raised, and hand
+  returning.
+- `jumping`: five frames for anticipation, lift, peak, descent, and settle.
+- `failed`: eight frames showing a clear deflated or sad reaction and recovery.
+- `waiting`: six distinct expectant poses, not copies of idle.
+- `running`: six active work or processing poses, not literal foot-running.
+- `review`: six focused inspection poses with changing eyes, head tilt, or paw.
+- look-direction rows: sixteen coherent directional poses whose head, eyes,
+  body, appendages, and props turn progressively clockwise.
+
+After generation, compare adjacent frames in every row with Vision and the
+deterministic validator. If the row reads as a static contact sheet, regenerate
+that complete row once before assembly. A successful file copy is not evidence
+of animation.
+
 ### Pet contract gate
 
 Pet assembly is contract-driven. The repository template at
@@ -365,13 +387,18 @@ node "$SKILL_ROOT/scripts/install-pet.mjs" \
 transparent canvas composition, neutral-frame insertion, RGBA WebP encoding,
 and v2 manifest creation. `validate-pet.mjs` checks the manifest,
 `spriteVersionNumber`, row frame counts, unused-cell transparency, dimensions,
-alpha channel, transparent corners, paths, and file size. Vision remains
+alpha channel, transparent corners, paths, file size, and visible frame motion
+for every action and look-direction row. Vision remains
 responsible for semantic checks that pixels alone cannot prove. `install-pet.mjs`
 uses an atomic sibling-directory replacement and never deletes another Pet ID.
 
 Supported stable errors include `PET_INPUT_INVALID`, `PET_CONTRACT_MISMATCH`,
 `PET_IMAGE_INVALID`, `PET_ALPHA_INVALID`, `PET_SPRITESHEET_INVALID`,
-`PET_MANIFEST_INVALID`, `PET_PATH_UNSAFE`, and `PET_INSTALL_FAILED`.
+`PET_ANIMATION_INVALID`, `PET_MANIFEST_INVALID`, `PET_PATH_UNSAFE`, and
+`PET_INSTALL_FAILED`. `PET_ANIMATION_INVALID` means at least one action or
+look-direction row contains duplicated or imperceptibly changing adjacent
+frames; regenerate that row with visible pose, limb, expression, or direction
+changes before installing.
 
 Inspect local Pet state with:
 

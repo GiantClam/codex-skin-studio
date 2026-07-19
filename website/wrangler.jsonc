@@ -55,6 +55,14 @@
         "limit": 10,
         "period": 60
       }
+    },
+    {
+      "name": "DOWNLOAD_GRANT_RATE_LIMITER",
+      "namespace_id": "1003",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
     }
   ]
 }

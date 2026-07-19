@@ -1,7 +1,7 @@
 {
   "id": "pet-id",
   "displayName": "Pet Name",
-  "description": "A cute anthropomorphic desktop companion.",
+  "description": "A cute chibi humanoid desktop companion.",
   "spriteVersionNumber": 2,
   "spritesheetPath": "spritesheet.webp"
 }

@@ -4,6 +4,7 @@ import { hasRole } from './access'
 
 export const Skins: CollectionConfig = {
   slug: 'skins',
+  admin: { hidden: true, useAsTitle: 'title', defaultColumns: ['title', 'status', 'targets', 'updatedAt'] },
   versions: { drafts: true, maxPerDoc: 20 },
   access: {
     read: ({ req }) => req.user ? true : { status: { equals: 'published' } },
@@ -11,7 +12,6 @@ export const Skins: CollectionConfig = {
     update: hasRole(['admin', 'editor', 'reviewer']),
     delete: hasRole(['admin']),
   },
-  admin: { useAsTitle: 'title', defaultColumns: ['title', 'status', 'targets', 'updatedAt'] },
   fields: [
     { name: 'title', type: 'text', required: true },
     { name: 'slug', type: 'text', required: true, unique: true },

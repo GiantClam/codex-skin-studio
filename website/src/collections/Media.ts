@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 
 export const Media: CollectionConfig = {
   slug: 'media',
+  admin: { hidden: true },
   access: {
     read: ({ req }) => req.user ? true : { isPublic: { equals: true } },
   },

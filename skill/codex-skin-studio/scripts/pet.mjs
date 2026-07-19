@@ -28,6 +28,11 @@ const DEFAULT_MAX_ATLAS_BYTES = 20 * 1024 * 1024;
 const MOTION_PIXEL_DELTA = 12;
 const MOTION_PIXEL_FRACTION = 0.001;
 const PET_SPRITE_VERSION = 2;
+const FRAME_HORIZONTAL_PADDING_RATIO = 0.04;
+const FRAME_TOP_PADDING_RATIO = 0.04;
+const FRAME_BASELINE_PADDING_RATIO = 0.077;
+export const CUSTOM_PET_ID = "codex-skin-studio-custom";
+export const CUSTOM_PET_DISPLAY_NAME = "Codex Skin Studio Custom";
 const DEFAULT_ROWS = [
   { name: "idle", frames: 6 },
   { name: "running-right", frames: 8 },
@@ -209,6 +214,59 @@ async function frameSource(file, { chromaKey = true } = {}) {
   return { path, buffer: processed.buffer, removedPixels: processed.removed };
 }
 
+async function inspectFrame(buffer) {
+  const image = requireSharp();
+  const { data, info } = await image(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  let left = info.width;
+  let top = info.height;
+  let right = -1;
+  let bottom = -1;
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if (data[(y * info.width + x) * 4 + 3] === 0) continue;
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  if (right < 0) throw petError("PET_IMAGE_INVALID", "pet frame contains no visible pixels");
+  return { data, info, bounds: { left, top, right, bottom, width: right - left + 1, height: bottom - top + 1 } };
+}
+
+async function normalizeFrame(frame, { frameWidth, frameHeight, targetBottom } = {}) {
+  const image = requireSharp();
+  const { data, info, bounds } = frame;
+  const horizontalPadding = Math.max(1, Math.round(frameWidth * FRAME_HORIZONTAL_PADDING_RATIO));
+  const topPadding = Math.max(1, Math.round(frameHeight * FRAME_TOP_PADDING_RATIO));
+  const maxWidth = Math.max(1, frameWidth - horizontalPadding * 2);
+  const maxHeight = Math.max(1, targetBottom - topPadding + 1);
+  const scale = Math.min(1, maxWidth / bounds.width, maxHeight / bounds.height);
+  const width = Math.max(1, Math.round(bounds.width * scale));
+  const height = Math.max(1, Math.round(bounds.height * scale));
+  const cropped = await image(data, { raw: info })
+    .extract({ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height })
+    .resize({ width, height, fit: "fill" })
+    .png()
+    .toBuffer();
+  const left = Math.round((frameWidth - width) / 2);
+  const top = Math.round(targetBottom - height + 1);
+  return image({ create: { width: frameWidth, height: frameHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: cropped, left, top }])
+    .png()
+    .toBuffer();
+}
+
+function frameBaseline(frameHeight) {
+  return frameHeight - Math.max(1, Math.round(frameHeight * FRAME_BASELINE_PADDING_RATIO));
+}
+
+function rowTargetBottom(rowName, frameHeight, frame, rowLowestBottom) {
+  const baseline = frameBaseline(frameHeight);
+  if (rowName !== "jumping") return baseline;
+  return baseline + (frame.bounds.bottom - rowLowestBottom);
+}
+
 async function encodeSpriteSheet(composites, width, height, formats) {
   const sharpImage = requireSharp();
   const { data, info } = await sharpImage({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
@@ -269,23 +327,36 @@ export async function createPet({ id, displayName, description, frames, out, con
   const parent = dirname(output);
   await mkdir(parent, { recursive: true });
   const sourceManifest = await loadFrameManifest(resolve(frames), contract);
-  const image = requireSharp();
   const staging = await mkdtemp(join(parent, `.${petId}.`));
   try {
     const frameWidth = contract.frame.width;
     const frameHeight = contract.frame.height;
     const composites = [];
+    const rowPlans = [];
     for (let rowIndex = 0; rowIndex < contract.rows.length; rowIndex += 1) {
       const row = rowSpec(contract.rows[rowIndex]);
       const rowName = row.name;
+      const entries = [];
       for (let column = 0; column < rowFrameCount(row); column += 1) {
         const source = await frameSource(sourceManifest.rows[rowName][column], { chromaKey });
-        const resized = await image(source.buffer).resize({ width: frameWidth, height: frameHeight, fit: "contain", position: "center", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
-        composites.push({ input: resized, left: column * frameWidth, top: rowIndex * frameHeight });
+        entries.push({ source, frame: await inspectFrame(source.buffer) });
+      }
+      const rowLowestBottom = Math.max(...entries.map((entry) => entry.frame.bounds.bottom));
+      rowPlans.push({ rowIndex, rowName, entries, rowLowestBottom });
+    }
+    for (const plan of rowPlans) {
+      for (const [column, entry] of plan.entries.entries()) {
+        const normalized = await normalizeFrame(entry.frame, {
+          frameWidth,
+          frameHeight,
+          targetBottom: rowTargetBottom(plan.rowName, frameHeight, entry.frame, plan.rowLowestBottom),
+        });
+        composites.push({ input: normalized, left: column * frameWidth, top: plan.rowIndex * frameHeight });
       }
     }
     const neutral = await frameSource(sourceManifest.neutralFrame, { chromaKey });
-    const neutralResized = await image(neutral.buffer).resize({ width: frameWidth, height: frameHeight, fit: "contain", position: "center", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+    const neutralFrame = await inspectFrame(neutral.buffer);
+    const neutralResized = await normalizeFrame(neutralFrame, { frameWidth, frameHeight, targetBottom: frameBaseline(frameHeight) });
     composites.push({ input: neutralResized, left: contract.neutralLookFrame.column * frameWidth, top: contract.neutralLookFrame.row * frameHeight });
     const formats = Array.isArray(contract.spritesheet.format) ? contract.spritesheet.format : [contract.spritesheet.format];
     const encoded = await encodeSpriteSheet(composites, frameWidth * contract.grid.columns, frameHeight * contract.grid.rows, formats);
@@ -369,7 +440,8 @@ async function validateFrameCells(file, contract) {
       if (right < 0) throw petError("PET_SPRITESHEET_INVALID", `frame ${row}:${column} contains no visible character`);
       const padding = Math.min(left, top, frameWidth - 1 - right, frameHeight - 1 - bottom);
       if (padding < Math.floor(Math.min(frameWidth, frameHeight) * 0.02)) throw petError("PET_SPRITESHEET_INVALID", `frame ${row}:${column} is cropped or lacks safe padding`);
-      frames.push({ row, name: rowSpecValue.name, column, left, top, right, bottom, width: right - left + 1, height: bottom - top + 1, padding, neutral: isNeutral });
+      const centerX = (left + right) / 2;
+      frames.push({ row, name: rowSpecValue.name, column, left, top, right, bottom, width: right - left + 1, height: bottom - top + 1, centerX, centerOffset: centerX - (frameWidth - 1) / 2, padding, neutral: isNeutral });
     }
   }
   return { frameCount: frames.length, frames };
@@ -437,13 +509,14 @@ export async function validatePetDirectory(directory, { contract, allowProvision
   return { status: "valid", id: manifest.id, directory: root, manifestPath, spritesheet, dimensions: imageInfo, frames, motion, contractVersion: contract.contractVersion };
 }
 
-export async function installPet(directory, { petsDir = defaultPetsDir(), contract, replace = false, allowProvisional = false, dryRun = false } = {}) {
+export async function installPet(directory, { petsDir = defaultPetsDir(), contract, replace = false, allowProvisional = false, dryRun = false, targetId = null, targetDisplayName = null } = {}) {
   const source = resolve(directory);
   const validation = await validatePetDirectory(source, { contract, allowProvisional });
   const destinationRoot = resolve(petsDir);
   await mkdir(destinationRoot, { recursive: true });
-  const destination = assertInside(destinationRoot, join(destinationRoot, validation.id), "pet destination");
-  if (dryRun) return { ...validation, status: "validated", dryRun: true, destination };
+  const installedId = assertPetId(targetId || validation.id);
+  const destination = assertInside(destinationRoot, join(destinationRoot, installedId), "pet destination");
+  if (dryRun) return { ...validation, status: "validated", dryRun: true, sourceId: validation.id, installedId, destination };
   if (!replace) {
     try {
       await stat(destination);
@@ -452,16 +525,21 @@ export async function installPet(directory, { petsDir = defaultPetsDir(), contra
       if (error.code !== "ENOENT") throw error;
     }
   }
-  const staging = await mkdtemp(join(destinationRoot, `.${validation.id}.`));
+  const staging = await mkdtemp(join(destinationRoot, `.${installedId}.`));
   try {
-    const manifest = await readFile(join(source, "pet.json"));
+    const sourceManifest = JSON.parse(await readFile(join(source, "pet.json"), "utf8"));
+    const manifest = Buffer.from(`${JSON.stringify({
+      ...sourceManifest,
+      id: installedId,
+      displayName: targetDisplayName || (installedId === CUSTOM_PET_ID ? CUSTOM_PET_DISPLAY_NAME : sourceManifest.displayName),
+    }, null, 2)}\n`, "utf8");
     const spritesheet = await readFile(validation.spritesheet);
     await writeFile(join(staging, "pet.json"), manifest);
     await writeFile(join(staging, basename(validation.spritesheet)), spritesheet);
     await commitDirectory(staging, destination, replace);
     const statePath = join(destinationRoot, ".codex-skin-studio-pet-state.json");
-    await writeJsonFile(statePath, { schemaVersion: 1, installedId: validation.id, installedAt: new Date().toISOString(), directory: destination, selection: "refresh-required" });
-    return { ...validation, status: "installed", destination, refreshRequired: true, selection: "refresh-required" };
+    await writeJsonFile(statePath, { schemaVersion: 1, installedId, sourceId: validation.id, installedAt: new Date().toISOString(), directory: destination, selection: "refresh-required" });
+    return { ...validation, status: "installed", sourceId: validation.id, installedId, destination, refreshRequired: true, selection: "refresh-required" };
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
     if (error.code) throw error;
@@ -489,7 +567,7 @@ export async function petStatus({ petsDir = defaultPetsDir() } = {}) {
   const root = resolve(petsDir);
   let state = null;
   try { state = await readJsonFile(join(root, ".codex-skin-studio-pet-state.json")); } catch { state = null; }
-  return { status: "ok", petsDir: root, active: state?.installedId || null, selection: state?.selection || "unknown", assetLoaded: state?.assetLoaded ?? null, pets: await listInstalledPets({ petsDir: root }) };
+  return { status: "ok", petsDir: root, active: state?.installedId || null, sourceId: state?.sourceId || null, selection: state?.selection || "unknown", assetLoaded: state?.assetLoaded ?? null, pets: await listInstalledPets({ petsDir: root }) };
 }
 
 export async function recordPetSelection({ petsDir = defaultPetsDir(), petId, selection = "native-ui-confirmed", assetLoaded = null } = {}) {
@@ -517,7 +595,7 @@ async function cli() {
   let result;
   if (command === "validate") result = await validatePetDirectory(requiredOption(options, "directory"), { contract, allowProvisional: options.get("allow-provisional") === true });
   else if (command === "create") result = await createPet({ id: requiredOption(options, "id"), displayName: options.get("name"), description: options.get("description"), frames: requiredOption(options, "frames"), out: requiredOption(options, "out"), contract, replace: options.get("replace") === true, chromaKey: options.get("chroma-key") !== false });
-  else if (command === "install") result = await installPet(requiredOption(options, "directory"), { petsDir: options.get("pets-dir") || defaultPetsDir(), contract, replace: options.get("replace") === true, allowProvisional: options.get("allow-provisional") === true, dryRun: options.get("dry-run") === true });
+  else if (command === "install") result = await installPet(requiredOption(options, "directory"), { petsDir: options.get("pets-dir") || defaultPetsDir(), contract, replace: options.get("replace") === true, allowProvisional: options.get("allow-provisional") === true, dryRun: options.get("dry-run") === true, targetId: options.get("target-id") || CUSTOM_PET_ID, targetDisplayName: options.get("target-name") || CUSTOM_PET_DISPLAY_NAME });
   else throw petError("PET_INPUT_INVALID", "usage: pet.mjs create|validate|install|status --contract PATH [options]");
   console.log(options.get("json") ? json(result) : result.message || json(result));
 }

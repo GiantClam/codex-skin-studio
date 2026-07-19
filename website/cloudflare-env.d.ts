@@ -6,6 +6,7 @@ interface __BaseEnv_CloudflareEnv {
 	D1: D1Database;
 	SUBMIT_RATE_LIMITER: RateLimit;
 	GITHUB_IMPORT_RATE_LIMITER: RateLimit;
+	DOWNLOAD_GRANT_RATE_LIMITER: RateLimit;
 	ASSETS: Fetcher;
 }
 declare namespace Cloudflare {

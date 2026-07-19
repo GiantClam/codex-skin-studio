@@ -17,7 +17,11 @@ import {
 import {
   classifyPairedInstallResult,
   installExtractedPackage,
+  normalizeCatalogItem,
+  parseArgs as parseRemoteArgs,
   parseZip,
+  rankRecommendation,
+  recommendSkins,
   saveExtracted,
   validatePackage,
 } from "../skill/codex-skin-studio/scripts/remote-skins.mjs";
@@ -140,6 +144,32 @@ test("paired upload requires exactly one source and creates the canonical archiv
     "theme/theme.json",
   ]);
   assert.equal(validatePackage(parsed, SLUG, { packageKind: "paired", hasPet: true }).kind, "paired");
+});
+
+test("prompt recommendations expose trusted preview, detail, and download links", async () => {
+  assert.deepEqual(parseRemoteArgs(["recommend", "--prompt", "anime cyan", "--limit", "6", "--json"]), {
+    command: "recommend",
+    endpoint: "https://codexskinstudio.com",
+    json: true,
+    limit: 6,
+    port: 9341,
+    prompt: "anime cyan",
+  });
+  const item = normalizeCatalogItem({
+    slug: "miku-signal",
+    title: "Miku Signal",
+    summary: "A cyan anime workspace.",
+    categories: ["anime-2d"],
+    palette: ["cyan"],
+    heroUrl: "/media/miku.webp",
+    installable: true,
+  }, "https://codexskinstudio.com");
+  assert.equal(item.imageUrl, "https://codexskinstudio.com/media/miku.webp");
+  assert.equal(item.detailUrl, "https://codexskinstudio.com/skins/miku-signal");
+  assert.equal(item.downloadUrl, "https://codexskinstudio.com/download/miku-signal");
+  assert.equal(rankRecommendation(item, "anime cyan").recommendationReason.includes("category:anime-2d"), true);
+  await assert.rejects(recommendSkins({ endpoint: "https://codexskinstudio.com", limit: 3 }), /non-empty --prompt/);
+  assert.throws(() => normalizeCatalogItem({ slug: "bad", downloadUrl: "https://example.com/download/bad" }, "https://codexskinstudio.com"), /official HTTPS|trusted/);
 });
 
 test("legacy theme packaging remains compatible with the legacy archive validator", async () => {

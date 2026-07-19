@@ -32,6 +32,16 @@ export default buildConfig({
   admin: {
     user: Users.slug,
     importMap: { baseDir: dirname },
+    components: {
+      afterNavLinks: ['@/components/admin/ThemePackageNavLink'],
+      views: {
+        themePackages: {
+          path: '/theme-packages',
+          exact: true,
+          Component: '@/components/admin/ThemePackageManager',
+        },
+      },
+    },
   },
   collections: [Users, Media, ThemePackages, Skins, GitHubSources, ModerationLogs],
   editor: lexicalEditor(),

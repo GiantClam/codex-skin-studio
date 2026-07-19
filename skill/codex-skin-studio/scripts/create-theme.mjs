@@ -7,7 +7,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { BRAND_STYLE_PRESETS, commandApply, loadTheme, validateManifest } from "./apply.mjs";
+import { BRAND_STYLE_PRESETS, commandApply, installPersistenceWorker, loadTheme, validateManifest } from "./apply.mjs";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 const REQUIRED_COLORS = ["accent", "secondary", "surface", "text"];
@@ -179,7 +179,7 @@ async function createTheme(values) {
     files.push("theme.json");
     const validated = await loadTheme(staging);
     await commitOutput(staging, output);
-    const application = values.has("apply") ? await commandApply(output, applyPort(values)) : null;
+    const application = values.has("apply") ? await commandApply(output, applyPort(values), { installPersistenceFn: installPersistenceWorker }) : null;
     return {
       status: "created",
       themeId: validated.manifest.id,

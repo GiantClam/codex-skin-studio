@@ -56,6 +56,7 @@ function parseArgs(argv) {
     else if (arg === "--download-only") options.downloadOnly = true;
     else if (arg === "--endpoint") options.endpoint = argv[++index];
     else if (arg === "--query" || arg === "-q") options.query = argv[++index];
+    else if (arg === "--prompt") options.prompt = argv[++index];
     else if (arg === "--target") options.target = argv[++index];
     else if (arg === "--category") options.category = argv[++index];
     else if (arg === "--palette") options.palette = argv[++index];
@@ -447,11 +448,100 @@ async function listSkins(options) {
   const url = endpointUrl(options.endpoint, "/api/skins");
   for (const [key, value] of [["q", options.query], ["target", options.target], ["category", options.category], ["palette", options.palette], ["sort", options.sort]]) if (value) url.searchParams.set(key, value);
   url.searchParams.set("limit", String(options.limit));
-  return fetchJson(url);
+  const result = await fetchJson(url);
+  if (!result || !Array.isArray(result.items)) throw error("remote skin catalog response did not contain an items array", "REMOTE_RESPONSE_INVALID");
+  return { ...result, items: result.items.map((item) => normalizeCatalogItem(item, options.endpoint)) };
+}
+
+function normalizeCatalogItem(item, endpoint) {
+  if (!item || typeof item !== "object" || typeof item.slug !== "string" || !item.slug) throw error("remote skin catalog contained an invalid item", "REMOTE_RESPONSE_INVALID");
+  const detailUrl = endpointUrl(endpoint, `/skins/${encodeURIComponent(item.slug)}`).toString();
+  const downloadUrl = typeof item.downloadUrl === "string" ? assertTrustedDownload(item.downloadUrl).toString() : endpointUrl(endpoint, `/download/${encodeURIComponent(item.slug)}`).toString();
+  let imageUrl = null;
+  for (const candidate of [item.heroUrl, item.thumbnailUrl, item.previewUrl]) {
+    if (typeof candidate !== "string" || !candidate) continue;
+    try { imageUrl = assertTrustedOrigin(new URL(candidate, endpointUrl(endpoint).origin).toString()).toString(); break; } catch { /* Ignore an untrusted preview URL and keep the trusted detail link. */ }
+  }
+  return {
+    slug: item.slug,
+    title: item.title || item.slug,
+    version: item.version || null,
+    authorDisplayName: item.authorDisplayName || null,
+    summary: item.summary || "",
+    description: item.description || item.summary || "",
+    targets: Array.isArray(item.targets) ? item.targets : [],
+    categories: Array.isArray(item.categories) ? item.categories : [],
+    palette: Array.isArray(item.palette) ? item.palette : [],
+    downloads: Number.isFinite(item.downloads) ? item.downloads : 0,
+    publishedAt: item.publishedAt || null,
+    packageKind: item.packageKind || "theme",
+    hasPet: item.hasPet === true,
+    pet: item.pet || null,
+    installable: item.installable === true || typeof item.packageSha256 === "string",
+    imageUrl,
+    detailUrl,
+    downloadUrl,
+  };
+}
+
+const PROMPT_HINTS = [
+  { terms: ["cyberpunk", "neon", "synthwave", "\u8d5b\u535a", "\u9713\u8679"], categories: ["cyber-ui"], palette: ["cyan", "mixed"] },
+  { terms: ["anime", "manga", "\u52a8\u6f2b", "\u65e5\u6f2b"], categories: ["anime-2d"] },
+  { terms: ["mystic", "magic", "gothic", "arcane", "\u9b54\u6cd5", "\u795e\u79d8"], categories: ["mystic"] },
+  { terms: ["cozy", "calm", "nature", "\u6e29\u6696", "\u81ea\u7136"], categories: ["cozy"], palette: ["green"] },
+  { terms: ["minimal", "clean", "simple", "\u6781\u7b80", "\u7b80\u7ea6"], categories: ["minimal"], palette: ["paper"] },
+  { terms: ["editorial", "premium", "magazine", "\u7f16\u8f91", "\u9ad8\u7ea7"], categories: ["editorial"] },
+];
+
+function promptTokens(prompt) {
+  return [...new Set((prompt.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((token) => token.length > 1))];
+}
+
+function promptHints(prompt) {
+  const value = prompt.toLocaleLowerCase();
+  return PROMPT_HINTS.filter((hint) => hint.terms.some((term) => value.includes(term))).reduce((result, hint) => ({
+    categories: [...new Set([...result.categories, ...(hint.categories || [])])],
+    palette: [...new Set([...result.palette, ...(hint.palette || [])])],
+  }), { categories: [], palette: [] });
+}
+
+function rankRecommendation(item, prompt) {
+  const tokens = promptTokens(prompt);
+  const hints = promptHints(prompt);
+  const searchable = [item.title, item.summary, item.authorDisplayName, ...item.categories, ...item.palette, ...item.targets].join(" ").toLocaleLowerCase();
+  const keywordMatches = tokens.filter((token) => searchable.includes(token));
+  const categoryMatches = hints.categories.filter((category) => item.categories.includes(category));
+  const paletteMatches = hints.palette.filter((palette) => item.palette.includes(palette));
+  const score = keywordMatches.length * 5 + categoryMatches.length * 4 + paletteMatches.length * 2 + Math.min(item.downloads / 1000, 1);
+  return {
+    ...item,
+    recommendationScore: Number(score.toFixed(3)),
+    recommendationReason: [...keywordMatches.map((token) => `keyword:${token}`), ...categoryMatches.map((category) => `category:${category}`), ...paletteMatches.map((palette) => `palette:${palette}`)],
+  };
+}
+
+export async function recommendSkins(options) {
+  const prompt = typeof options.prompt === "string" ? options.prompt.trim() : "";
+  if (!prompt) throw error("recommend requires a non-empty --prompt", "INVALID_ARGUMENT");
+  const target = options.target || "chatgpt";
+  const direct = await listSkins({ ...options, query: prompt, target, sort: options.sort || "downloads" });
+  let items = direct.items.map((item) => rankRecommendation(item, prompt));
+  if (items.length === 0) {
+    const broad = await listSkins({ ...options, query: undefined, target, sort: options.sort || "downloads", limit: 48 });
+    items = broad.items.map((item) => rankRecommendation(item, prompt)).sort((left, right) => right.recommendationScore - left.recommendationScore || right.downloads - left.downloads).slice(0, options.limit);
+  }
+  return { status: "ok", mode: "prompt-recommendation", prompt, target, count: items.length, recommendations: items.slice(0, options.limit) };
 }
 
 function printResult(value, jsonOutput) {
   if (jsonOutput) console.log(JSON.stringify(value, null, 2));
+  else if (value.recommendations) console.log(value.recommendations.map((item, index) => [
+    `### ${index + 1}. ${item.title}${item.version ? ` ${item.version}` : ""}`,
+    item.imageUrl ? `![${item.title}](${item.imageUrl})` : `[Preview and full description](${item.detailUrl})`,
+    item.description,
+    `Author: ${item.authorDisplayName || "Community contributor"} | Downloads: ${item.downloads}`,
+    `[Open details](${item.detailUrl}) | [Download](${item.downloadUrl})`,
+  ].join("\n")).join("\n\n") || "No matching published skins found.");
   else if (value.items) console.log(value.items.map((item) => `${item.slug}\t${item.title}\t${item.version}\t${item.installable ? "installable" : "metadata-only"}`).join("\n") || "No published skins found.");
   else if (value.status === "downloaded") console.log(`Downloaded ${value.title} to ${value.path}`);
   else if (value.status === "partially_installed") console.log(`Installed ${value.title} locally, but Pet selection still requires Refresh in ChatGPT Desktop Settings > Pets.`);
@@ -460,11 +550,15 @@ function printResult(value, jsonOutput) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.command === "recommend") {
+    printResult(await recommendSkins(options), options.json);
+    return;
+  }
   if (options.command === "list") {
     printResult(await listSkins(options), options.json);
     return;
   }
-  if (options.command !== "install") throw error("usage: remote-skins.mjs list [filters] | install --slug <slug> --confirm-install [--download-only]", "INVALID_ARGUMENT");
+  if (options.command !== "install") throw error("usage: remote-skins.mjs recommend --prompt \"...\" [filters] | list [filters] | install --slug <slug> --confirm-install [--download-only]", "INVALID_ARGUMENT");
   if (!options.slug) throw error("skin slug is required", "INVALID_ARGUMENT");
   if (!options.confirmInstall) throw error("explicit installation consent is required; pass --confirm-install only after the user agrees", "CONFIRMATION_REQUIRED");
   const downloaded = await downloadPublishedSkin(options.endpoint, options.slug);
@@ -484,7 +578,7 @@ async function main() {
   }
 }
 
-export { classifyPairedInstallResult, downloadPublishedSkin, endpointUrl, installExtractedPackage, parseZip, saveExtracted, validatePackage };
+export { classifyPairedInstallResult, downloadPublishedSkin, endpointUrl, installExtractedPackage, listSkins, normalizeCatalogItem, parseArgs, parseZip, rankRecommendation, saveExtracted, validatePackage };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((caught) => {

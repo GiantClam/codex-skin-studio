@@ -4,8 +4,8 @@ import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promis
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
-import { appDataRoot, commandApply, commandStatus, loadTheme } from "./apply.mjs";
-import { defaultPetsDir, installPet, loadPetContract, petError, petStatus, recordPetSelection, validatePetDirectory } from "./pet.mjs";
+import { appDataRoot, commandApply, commandStatus, installPersistenceWorker, loadTheme } from "./apply.mjs";
+import { CUSTOM_PET_ID, defaultPetsDir, installPet, loadPetContract, petError, petStatus, recordPetSelection, validatePetDirectory } from "./pet.mjs";
 import { selectPetInChatGptDesktop } from "./pet-desktop.mjs";
 
 const BUNDLE_SCHEMA = 1;
@@ -88,26 +88,26 @@ export async function createPairBundle({ id, displayName, themeDir, petDir, out,
   }
 }
 
-export async function switchPairBundle(directory, { contract, petsDir = defaultPetsDir(), port = 9341, replace = true, allowProvisional = false, nativePet = true, selectPetFn = selectPetInChatGptDesktop, commandApplyFn = commandApply, appDataRootFn = appDataRoot } = {}) {
+export async function switchPairBundle(directory, { contract, petsDir = defaultPetsDir(), port = 9341, replace = true, allowProvisional = false, nativePet = true, selectPetFn = selectPetInChatGptDesktop, commandApplyFn = commandApply, installPersistenceFn = installPersistenceWorker, appDataRootFn = appDataRoot } = {}) {
   const bundle = await validatePairBundle(directory, { contract, allowProvisional });
-  const petInstall = await installPet(join(bundle.directory, bundle.bundle.petPath), { petsDir, contract, replace, allowProvisional });
-  const themeApplication = await commandApplyFn(join(bundle.directory, bundle.bundle.themePath), port);
+  const petInstall = await installPet(join(bundle.directory, bundle.bundle.petPath), { petsDir, contract, replace, allowProvisional, targetId: CUSTOM_PET_ID });
+  const themeApplication = await commandApplyFn(join(bundle.directory, bundle.bundle.themePath), port, { installPersistenceFn });
   let petSelection;
   if (!nativePet) {
     petSelection = { status: "manual", selection: "refresh-required", reason: "native Pet UI selection was disabled" };
   } else {
     try {
-      petSelection = await selectPetFn({ petId: bundle.bundle.petId, port });
+      petSelection = await selectPetFn({ petId: CUSTOM_PET_ID, port });
     } catch (error) {
       petSelection = { status: "manual", selection: "refresh-required", code: error.code || "PET_NATIVE_UI_UNAVAILABLE", message: error.message };
     }
   }
   if (petSelection.selection === "native-ui-confirmed") {
-    await recordPetSelection({ petsDir, petId: bundle.bundle.petId, selection: petSelection.selection, assetLoaded: petSelection.assetLoaded });
+    await recordPetSelection({ petsDir, petId: CUSTOM_PET_ID, selection: petSelection.selection, assetLoaded: petSelection.assetLoaded });
   }
   const stateRoot = appDataRootFn();
   await mkdir(stateRoot, { recursive: true });
-  const pairedState = { schemaVersion: 1, bundleId: bundle.id, themeId: bundle.bundle.themeId, petId: bundle.bundle.petId, switchedAt: new Date().toISOString(), themeStatus: themeApplication.status, petStatus: petInstall.status, petSelection: petSelection.selection, petUi: petSelection };
+  const pairedState = { schemaVersion: 1, bundleId: bundle.id, themeId: bundle.bundle.themeId, sourcePetId: bundle.bundle.petId, petId: CUSTOM_PET_ID, installedPetId: CUSTOM_PET_ID, switchedAt: new Date().toISOString(), themeStatus: themeApplication.status, petStatus: petInstall.status, petSelection: petSelection.selection, petUi: petSelection };
   await writeFile(join(stateRoot, "paired-state.json"), `${json(pairedState)}\n`);
   const selected = petSelection.selection === "native-ui-confirmed";
   const themeStatus = themeApplication.status === "applied" ? "theme-applied" : "theme-scheduled";

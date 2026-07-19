@@ -608,6 +608,9 @@
 .screen-detail .primary-action, .screen-detail .secondary-action { display: inline-flex; align-items: center; gap: 14px; border: 1px solid transparent; padding: 14px 17px; font-family: var(--workbench-mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .screen-detail .primary-action { background: var(--workbench-blue); color: #fff; }
 .screen-detail .primary-action:hover { background: var(--workbench-cyan); }
+.screen-detail .primary-action:disabled { cursor: wait; opacity: .7; }
+.download-action-wrap { display: grid; gap: 8px; }
+.download-action-error { margin: 0; max-width: 280px; color: #b43d2a; font-family: var(--workbench-mono); font-size: 10px; line-height: 1.5; }
 .screen-detail .secondary-action { border-color: var(--workbench-blue); color: var(--workbench-blue); }
 .screen-detail .checksum { margin-top: 16px; color: var(--workbench-muted); font-size: 10px; letter-spacing: .06em; }
 .screen-detail .checksum code { color: var(--workbench-ink); }

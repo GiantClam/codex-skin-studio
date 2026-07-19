@@ -27,6 +27,7 @@ automatic replacement for the user's active theme.
 - Never modify `app.asar`, the application bundle, the code signature, or official JavaScript.
 - Target ChatGPT Desktop on macOS or Windows. macOS uses the technical bundle identifier `com.openai.codex`; Windows uses the ChatGPT executable discovered from standard install locations, `where.exe`, or the Microsoft Store package install directory through PowerShell.
 - Generate without restarting when the user asks only for a design. When the user explicitly asks to apply or replace a skin, complete application and enable persistence for the selected theme.
+- After a theme or paired skin package is successfully created and validated, pause and ask whether the user wants to upload it to the Codex Skin community. Never silently skip this consent step and never upload from generation alone.
 - Use the built-in `$imagegen` skill by default. When a generated or edited image is required, invoke `$imagegen` before creating theme files or running `apply.mjs`; do not treat a prompt such as "use imagegen" as a completed generation step.
 - `$imagegen` must use the native `image_gen` tool by default. Do not replace it with a Node script, an HTTP request, an OpenAI API call, or the CLI fallback. If native generation is unavailable or returns an error, report the exact error and ask for a final local background image. Do not request an API key or switch to an external image service automatically.
 - Use one canonical role schema for multi-image inputs: `subject/object`, `style-reference`, `composition/layout-reference`, or `brand/logo`. Direct background and single-image subject workflows are separate modes and do not use this multi-image role schema.
@@ -247,7 +248,7 @@ This command creates, validates, persists, and applies the theme. Its JSON `appl
 
 ## Share a theme with Codex Skin Archive
 
-Uploading is skill-only. Do not direct the user to a website submit page and do not upload a package without an explicit yes. After the theme has been created and validated, show the user the exact editable sharing metadata and ask:
+Uploading is skill-only. Do not direct the user to a website submit page and do not upload a package without an explicit yes. This confirmation is a required post-generation step for both theme-only and paired theme + Pet packages. After the package has been created and validated, show the user the exact editable sharing metadata and pause for an answer:
 
 `Upload this theme to codexskinstudio.com and share it with other users?`
 
@@ -299,12 +300,54 @@ managed environments.
 
 The server accepts only requests signed by the provisioned `SKIN_STUDIO_UPLOAD_SECRET`, checks a five-minute timestamp window, applies the Cloudflare rate limiter, validates the ZIP again, rejects unsafe metadata and GitHub URLs, stores the package, and queues it as `pending_review`. Never hard-code the secret in this skill, a theme directory, a ZIP, a prompt, or a log. If the secret is missing, stop before the network request and tell the user that upload configuration is unavailable.
 
+## Persistence lifecycle
+
+Applying a theme through the CLI or the one-shot creator automatically runs
+`persist.mjs install` on macOS or Windows after the theme state is saved. A
+theme that was only generated is not applied and does not start a worker.
+The worker starts at user login, launches ChatGPT Desktop with loopback CDP when
+a selected theme exists and the app is not running, and recovers a manually opened ChatGPT Desktop instance that was started without the debugging port.
+It does not relaunch ChatGPT after an explicit user quit. Check the result with:
+
+```bash
+node "$SKILL_ROOT/scripts/persist.mjs" status --json
+```
+
+If the worker is disabled, install it explicitly and then reapply the selected
+theme:
+
+```bash
+node "$SKILL_ROOT/scripts/persist.mjs" install --json
+node "$SKILL_ROOT/scripts/apply.mjs" apply "/absolute/path/to/theme" --json
+```
+
 ## Browse and install published cloud skins
 
 Cloud skins are read and installed through the Skill. The website exposes only
 skins whose Payload status is `published`; drafts and `pending_review` records
 are never returned by the public catalog API. The read/download flow does not
 need a login or an upload secret.
+
+When the user provides a natural-language prompt such as `anime cyan`,
+`cyberpunk developer workspace`, or a Chinese description, use the prompt
+recommendation command. It queries the public catalog, ranks published themes
+by keyword, category, palette, and download relevance, and returns a compact
+visual/text result for each recommendation: title, version, author, summary,
+preview image URL when published, detail page URL, and direct download URL.
+
+```bash
+node "$SKILL_ROOT/scripts/remote-skins.mjs" recommend \
+  --prompt "anime cyan developer workspace" \
+  --target chatgpt \
+  --limit 6 \
+  --json
+```
+
+Without `--json`, the command prints Markdown recommendation cards with image
+previews, descriptions, detail links, and download links. Use `--json` when the
+Skill needs to present or further filter the result programmatically. Only
+published catalog records are returned; an absent preview image is reported as
+`imageUrl: null`, while the trusted detail page remains available.
 
 When the user asks to find a shared skin, first query the catalog and show the
 title, version, author, targets, categories, palette, summary, download count,
@@ -360,15 +403,38 @@ package hash is intentionally metadata-only and cannot be installed.
 Use this workflow when the user asks for a theme and a matching ChatGPT Desktop
 Pet, mascot, companion, or animated character.
 
+The local installation uses one stable Custom Pet slot:
+`codex-skin-studio-custom`. A theme or paired bundle may keep its own source Pet
+ID for package identity, but installation always atomically replaces the stable
+Custom Pet directory and selects that same ID. Do not create a new local Pet
+option for every theme, do not select the theme slug as the installed Pet ID,
+and do not delete older user-installed Pet directories without explicit user
+approval. Switching themes changes the Custom Pet manifest and spritesheet,
+not the number of Pet options shown by ChatGPT Desktop.
+
 ### Pet visual contract
 
 Every generated Pet must be:
 
 - cartoonized, never photorealistic;
-- anthropomorphic, with readable expressions and work-state poses;
+- chibi humanoid or anthropomorphic, with readable expressions and work-state poses;
 - large-head and small-body, with the head as the first visual focus;
 - consistent across all action frames;
 - free of text, logos, watermarks, extra characters, UI, hard shadows, and cropped limbs.
+
+### Representation priority
+
+Use the following representation priority unless the user explicitly overrides
+it:
+
+1. First choice: a chibi humanoid or human-like character with a large head,
+   small body, expressive face, and readable hands, clothing, and props.
+2. Second choice: a chibi anthropomorphic animal, used when the user requests
+   an animal or when the source subject is clearly an animal mascot.
+3. Never turn a supplied human or fictional humanoid subject into an animal by
+   default. Preserve its identity and transform it into a chibi character.
+4. When the user explicitly requests an animal, follow that request while
+   keeping the same large-head, small-body, cartoon, and humanoid-pose rules.
 
 The default visual target is a head occupying roughly 45-60 percent of the
 character height, a body occupying roughly 40-55 percent, a head at least 1.1
@@ -381,12 +447,18 @@ character's identity or defining details.
 1. Inspect every local reference image with Vision before generation.
 2. Classify each image as `subject/object`, `style-reference`, `composition/layout-reference`, or `brand/logo`.
 3. Preserve the subject's identity, silhouette, hairstyle, clothing, colors, materials, markings, and accessories before applying the cartoon mascot transformation.
-4. Generate one canonical character reference first.
-5. Generate one action or direction strip at a time using the canonical reference. Do not ask Image Generation to draw the final 8x11 atlas in one call; the 8x9 standard-row atlas is only an intermediate assembly artifact.
-6. Include `large head and small body`, `cute anthropomorphic cartoon`, and a friendly expressive face in every Pet action prompt.
-7. Use a flat `#00FF00` background for generated action images when native transparency is not available. Do not retain the chroma-key background in the installed atlas.
-8. Inspect the generated reference and action frames with Vision. Reject a frame if the character is photorealistic, no longer anthropomorphic, loses the large-head/small-body ratio, changes identity, contains extra content, or is cropped.
-9. If native Image Generation is unavailable, report its exact error and stop. Do not call an external image service or request an API key automatically.
+4. Resolve the representation before writing the prompt. Default to a chibi
+   humanoid character; use an animal only when the user requests one or the
+   source subject is already an animal mascot.
+5. Generate one canonical character reference first.
+6. Generate one action or direction strip at a time using the canonical reference. Do not ask Image Generation to draw the final 8x11 atlas in one call; the 8x9 standard-row atlas is only an intermediate assembly artifact.
+7. For the default mode, include `chibi humanoid character`, `large head and
+   small body`, and a friendly expressive face in every Pet action prompt. In
+   animal mode, replace `chibi humanoid character` with `chibi anthropomorphic
+   animal` and keep the other constraints.
+8. Use a flat `#00FF00` background for generated action images when native transparency is not available. Do not retain the chroma-key background in the installed atlas.
+9. Inspect the generated reference and action frames with Vision. Reject a frame if the character is photorealistic, loses the requested humanoid-or-animal representation, loses the large-head/small-body ratio, changes identity, contains extra content, or is cropped.
+10. If native Image Generation is unavailable, report its exact error and stop. Do not call an external image service or request an API key automatically.
 
 Use an explicit sequential pose brief for every row; never reuse one generated
 image for all frame files in a row:
@@ -545,14 +617,21 @@ node "$SKILL_ROOT/scripts/install-pet.mjs" \
   --json
 ```
 
-`create-pet.mjs` performs chroma-key removal, fixed-size contain scaling,
-transparent canvas composition, neutral-frame insertion, RGBA WebP encoding,
-and v2 manifest creation. `validate-pet.mjs` checks the manifest,
+`create-pet.mjs` performs chroma-key removal, visible-subject extraction,
+deterministic per-cell anchoring, exact frame-canvas composition, neutral-frame
+insertion, RGBA WebP encoding, and v2 manifest creation. Every source frame is
+placed in an exact cell with a stable horizontal center and baseline; the
+jumping row is the only row that preserves intentional vertical displacement.
+This prevents source-image padding from becoming sprite spacing or animation
+sampling drift. `validate-pet.mjs` checks the manifest,
 `spriteVersionNumber`, row frame counts, unused-cell transparency, dimensions,
 alpha channel, transparent corners, paths, file size, and visible frame motion
 for every action and look-direction row. Vision remains
 responsible for semantic checks that pixels alone cannot prove. `install-pet.mjs`
 uses an atomic sibling-directory replacement and never deletes another Pet ID.
+It installs into `codex-skin-studio-custom` by default. Use `--target-id` only
+for an explicit low-level migration or test; normal theme and paired workflows
+must keep the stable Custom Pet ID.
 
 Supported stable errors include `PET_INPUT_INVALID`, `PET_CONTRACT_MISMATCH`,
 `PET_IMAGE_INVALID`, `PET_ALPHA_INVALID`, `PET_SPRITESHEET_INVALID`,
@@ -613,6 +692,8 @@ automation failures fall back without undoing the theme application. The
 adapter also recognizes visible settings links and semantic controls through
 `aria-label`, `title`, `data-testid`, and settings URLs, then recognizes visible
 Pets/Appearance panels and custom Pet cards. It never reads private app state.
+The selected `petUi.petId` is always `codex-skin-studio-custom`; paired state
+retains the source bundle Pet ID separately for traceability.
 If the current Windows session is unauthenticated
 or does not expose a visible Settings control, return the adapter error and keep
 the result at `theme-applied-pet-refresh-required`; do not report native Pet
@@ -635,7 +716,7 @@ after the Pet has been installed locally:
 
 ```bash
 node "$SKILL_ROOT/scripts/verify-pet-desktop.mjs" \
-  --pet-id "pet-id" \
+  --pet-id "codex-skin-studio-custom" \
   --port 9341 \
   --json
 ```
@@ -696,9 +777,9 @@ Skill installation itself only copies files and cannot start a process. On the f
 
 After upgrading or re-syncing the Skill files, run `persist.mjs install` even when the worker already reports `enabled`. The worker is a long-lived Node.js process and loads the control server and theme discovery code only at startup; re-registering the LaunchAgent refreshes `/themes` and prevents stale switch requests such as `local theme was not found`.
 
-On macOS, `persist.mjs install` creates a user-level LaunchAgent. On Windows, it creates a user-level Windows Task Scheduler task named `CodexSkinStudio`, triggered at interactive logon. Both workers are separate Node.js processes that reapply the theme only while a user-opened ChatGPT Desktop renderer is reachable through loopback CDP. They never launch, relaunch, or prevent the user from closing ChatGPT Desktop, and they do not block normal macOS shutdown or Windows sign-out. Do not use a ChatGPT Scheduled Task for this job; it is unrelated to the local OS worker.
+On macOS, `persist.mjs install` creates a user-level LaunchAgent. On Windows, it creates a user-level Windows Task Scheduler task named `CodexSkinStudio`, triggered at interactive logon. Both workers are separate Node.js processes. At login they may launch ChatGPT Desktop with loopback CDP when a selected theme exists; if the user later opens ChatGPT Desktop without CDP, they perform one controlled restart to restore the injection. They remain idle after an explicit user quit and do not block normal macOS shutdown or Windows sign-out. Do not use a ChatGPT Scheduled Task for this job; it is unrelated to the local OS worker.
 
-The persistence worker never launches, relaunches, quits, or prevents closing ChatGPT Desktop. It never modifies `app.asar`, the application signature, or the Windows installation. Remove the platform-native worker with:
+The persistence worker never modifies `app.asar`, the application signature, or the Windows installation. Remove the platform-native worker with:
 
 ```bash
 node "$SKILL_ROOT/scripts/persist.mjs" uninstall --json

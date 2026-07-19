@@ -4,6 +4,7 @@ import { isAdmin } from './access'
 
 export const ThemePackages: CollectionConfig = {
   slug: 'theme-packages',
+  admin: { hidden: true },
   access: {
     create: isAdmin,
     read: ({ req }) => Boolean(req.user),

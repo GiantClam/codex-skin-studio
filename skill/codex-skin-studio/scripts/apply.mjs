@@ -4,11 +4,12 @@ import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { statSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const PORT = 9341;
+const PERSIST_CONTROL_PORT = 9342;
 const SWITCHER_PORT = 9342;
 const STYLE_ID = "codex-skin-studio-style";
 const SWITCHER_ID = "codex-skin-studio-switcher";
@@ -1303,6 +1304,16 @@ function launchApplication(app, port, platformName = platform(), normal = false)
   return child;
 }
 
+async function installPersistenceWorker({ port = PORT, controlPort = PERSIST_CONTROL_PORT, platformFn = platform, execFileFn = execFileAsync } = {}) {
+  if (!isSupportedPlatform(platformFn())) return { status: "skipped", reason: "unsupported-platform" };
+  const scriptPath = join(dirname(fileURLToPath(import.meta.url)), "persist.mjs");
+  const result = await execFileFn(process.execPath, [scriptPath, "install", "--port", String(port), "--control-port", String(controlPort), "--json"], { timeout: 15000 });
+  let parsed;
+  try { parsed = JSON.parse(result.stdout); } catch { throw new Error(`persistence install returned invalid JSON: ${result.stdout || result.stderr || "no output"}`); }
+  if (!parsed || !["enabled", "installed"].includes(parsed.status)) throw new Error(parsed?.message || "persistence worker could not be enabled");
+  return parsed;
+}
+
 async function quitApplication(info, pids = [], platformName = platform()) {
   if (platformName === "win32") {
     if (!pids.length) return;
@@ -1311,7 +1322,15 @@ async function quitApplication(info, pids = [], platformName = platform()) {
     })));
     return;
   }
-  await execFileAsync("/usr/bin/osascript", ["-e", `tell application id ${JSON.stringify(BUNDLE_ID)} to quit`], { timeout: 5000 });
+  try {
+    await execFileAsync("/usr/bin/osascript", ["-e", `tell application id ${JSON.stringify(BUNDLE_ID)} to quit`], { timeout: 5000 });
+  } catch (error) {
+    const message = String(error?.message || error || "");
+    if (!pids.length || !/user (?:canceled|cancelled)|-128|not authorized/i.test(message)) throw error;
+    for (const pid of pids) {
+      try { process.kill(pid, "SIGTERM"); } catch (killError) { if (killError.code !== "ESRCH") throw killError; }
+    }
+  }
 }
 
 function isPidRunning(pid, { processKillFn = process.kill } = {}) {
@@ -1400,7 +1419,7 @@ async function restartWorkerCoreImpl(port, { normal = false, requireArmed = fals
       await delayFn(250);
     }
     if (!injectionSucceeded) throw new Error(`Codex renderer did not become ready on port ${port}${lastError ? `: ${lastError.message}` : ""}`);
-    await writeStateFn({ ...(await readStateFn()), themeId: saved.manifest.id, themeDir: saved.destination, assetFlags: assetFlags(saved.manifest), appliedAt: new Date().toISOString(), active: true, restartPending: false, restartWorkerPid: null });
+    await writeStateFn({ ...clearFailureState(await readStateFn()), themeId: saved.manifest.id, themeDir: saved.destination, assetFlags: assetFlags(saved.manifest), appliedAt: new Date().toISOString(), active: true, restartPending: false, restartWorkerPid: null });
   } catch (error) {
     if (processExited) error.processExited = true;
     throw error;
@@ -1466,7 +1485,7 @@ async function commandValidate(dir) {
   return { status: "valid", themeId: theme.manifest.id, themeDir: theme.root, hero: theme.manifest.hero, ...(theme.manifest.logo ? { logo: theme.manifest.logo } : {}), ...(theme.manifest.polaroid ? { polaroid: theme.manifest.polaroid } : {}), ...(theme.manifest.copy ? { copy: theme.manifest.copy } : {}) };
 }
 
-async function commandApply(dir, port, { persistFn = persist, writeStateFn = writeState, readStateFn = readState, removeStateFn = removeState, targetsFn = targets, spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, injectFn = injectTheme, platformFn = platform } = {}) {
+async function commandApply(dir, port, { persistFn = persist, writeStateFn = writeState, readStateFn = readState, removeStateFn = removeState, targetsFn = targets, spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, injectFn = injectTheme, installPersistenceFn = null, platformFn = platform } = {}) {
   if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   let theme;
   try { theme = await loadTheme(dir); } catch (error) { error.code = "THEME_INVALID"; throw error; }
@@ -1487,7 +1506,9 @@ async function commandApply(dir, port, { persistFn = persist, writeStateFn = wri
       try {
         await writeStateFn({ ...(prior || {}), themeId: saved.manifest.id, themeDir: saved.destination, assetFlags: assetFlags(saved.manifest), appliedAt: new Date().toISOString(), active: false, restartPending: true, restartWorkerPid: workerPid });
         stateWritten = true;
+        const persistence = installPersistenceFn ? await installPersistenceFn({ port }) : null;
         await commit();
+        return { status: "scheduled", themeId: saved.manifest.id, themeDir: saved.destination, restartRequired: true, workerPid, statePath: STATE, ...(persistence ? { persistence } : {}) };
       } catch (error) {
         const cancellationErrors = [];
         try { await cancelWorkerFn(workerPid); } catch (cancelError) { cancellationErrors.push(cancelError); }
@@ -1495,7 +1516,6 @@ async function commandApply(dir, port, { persistFn = persist, writeStateFn = wri
         if (cancellationErrors.length) throw new AggregateError([error, ...cancellationErrors], "apply scheduling and worker cancellation failed");
         throw error;
       }
-      return { status: "scheduled", themeId: saved.manifest.id, themeDir: saved.destination, restartRequired: true, workerPid, statePath: STATE };
     }
     if (!list.length) {
       const error = new Error("CDP discovery found no eligible Codex renderer");
@@ -1509,8 +1529,9 @@ async function commandApply(dir, port, { persistFn = persist, writeStateFn = wri
     }
     await writeStateFn({ ...clearFailureState(prior), themeId: saved.manifest.id, themeDir: saved.destination, assetFlags: assetFlags(saved.manifest), appliedAt: new Date().toISOString(), active: true, restartPending: false, restartWorkerPid: null });
     stateWritten = true;
+    const persistence = installPersistenceFn ? await installPersistenceFn({ port }) : null;
     await commit();
-    return { status: "applied", themeId: saved.manifest.id, rendererCount: injection?.rendererCount ?? 1, restartRequired: false };
+    return { status: "applied", themeId: saved.manifest.id, rendererCount: injection?.rendererCount ?? 1, restartRequired: false, ...(persistence ? { persistence } : {}) };
   } catch (error) {
     const compensationErrors = [];
     if (typeof injection?.rollback === "function") {
@@ -1611,7 +1632,7 @@ async function main() {
   } else if (args.command === "validate") {
     result = await commandValidate(args.themeDir);
   } else if (args.command === "apply") {
-    result = await commandApply(args.themeDir, args.port);
+    result = await commandApply(args.themeDir, args.port, { installPersistenceFn: installPersistenceWorker });
   } else if (args.command === "status") {
     result = await commandStatus(args.port);
   } else if (args.command === "restore") {
@@ -1622,7 +1643,7 @@ async function main() {
   console.log(args.jsonOutput ? json(result) : result.message || json(result));
 }
 
-export { BRAND_STYLE_PRESETS, appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, clearFailureState, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
+export { BRAND_STYLE_PRESETS, appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, clearFailureState, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, installPersistenceWorker, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     const result = fail(commandErrorCode(error), error.message);

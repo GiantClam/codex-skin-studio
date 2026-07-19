@@ -8,7 +8,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
   if (/^\d+$/.test(slug)) return REST_GET(config)(_request, { params: Promise.resolve({ slug: ['skins', slug] }) })
   const skin = await getPublicSkin(slug)
   if (!skin) return Response.json({ error: 'Not found' }, { status: 404 })
-  return Response.json({ ...skin, downloadUrl: `https://codexskinstudio.com/download/${encodeURIComponent(skin.slug)}`, installable: Boolean(skin.packageSha256) }, { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300' } })
+  return Response.json({ ...skin, installable: Boolean(skin.packageSha256), downloadRequiresGrant: true }, { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300' } })
 }
 
 export async function OPTIONS(request: Request, { params }: { params: Promise<{ slug: string }> }) {

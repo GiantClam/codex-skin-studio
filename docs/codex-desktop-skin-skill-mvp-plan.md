@@ -644,12 +644,13 @@ CSS 原则：
 
 CDP 注入的 style 只存在于 renderer 内存，正常退出、renderer 完整重载或应用更新后都会消失。保存主题文件不能解决这个生命周期问题。
 
-Skill 安装本身只复制文件，不执行后台进程。用户首次明确应用或替换主题时，Skill 自动检查并安装 `persist.mjs install`；仅生成设计时不安装。该命令会在 macOS 安装用户级 LaunchAgent，在 Windows 安装用户级 Task Scheduler 任务，运行一个低权限、回环地址限定的 worker：
+Skill 安装本身只复制文件，不执行后台进程。用户首次明确应用或替换主题时，实际 apply CLI 自动检查并安装 `persist.mjs install`；仅生成设计时不安装。该命令会在 macOS 安装用户级 LaunchAgent，在 Windows 安装用户级 Task Scheduler 任务，运行一个低权限、回环地址限定的 worker：
 
-1. 以 `127.0.0.1:9341` 启动 ChatGPT Desktop。
+1. 在用户登录后，如果已有选中的主题且 ChatGPT Desktop 未运行，以 `127.0.0.1:9341` 启动 ChatGPT Desktop。
 2. 发现 renderer 后检查当前主题的注入状态。
 3. 注入缺失或 theme id 不匹配时重新注入已保存主题。
-4. 用户显式执行 `persist.mjs uninstall` 后停止并删除对应的平台 worker。
+4. 用户手动正常启动 ChatGPT Desktop 且未携带 CDP 参数时，worker 只对该运行实例执行一次受控重启并重新注入；用户显式退出应用后 worker 保持空闲，不自动重新打开应用。
+5. 用户显式执行 `persist.mjs uninstall` 后停止并删除对应的平台 worker。
 
 不使用 ChatGPT Scheduled Task 代替本地平台 worker。macOS 使用 `launchd`，Windows 使用 Task Scheduler；两者负责电脑登录和 ChatGPT Desktop 启动后的自动注入，并通过 `127.0.0.1:9341` 访问 CDP。
 

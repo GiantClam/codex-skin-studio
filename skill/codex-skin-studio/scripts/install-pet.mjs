@@ -2,7 +2,7 @@
 
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { defaultPetsDir, installPet, loadPetContract, parsePetArgs, petError } from "./pet.mjs";
+import { CUSTOM_PET_DISPLAY_NAME, CUSTOM_PET_ID, defaultPetsDir, installPet, loadPetContract, parsePetArgs, petError } from "./pet.mjs";
 
 const json = (value) => JSON.stringify(value, null, 2);
 const required = (options, name) => {
@@ -18,6 +18,8 @@ async function main() {
   const result = await installPet(required(options, "directory"), {
     petsDir: options.get("pets-dir") || defaultPetsDir(),
     contract,
+    targetId: options.get("target-id") || CUSTOM_PET_ID,
+    targetDisplayName: options.get("target-name") || CUSTOM_PET_DISPLAY_NAME,
     replace: options.get("replace") === true,
     allowProvisional,
     dryRun: options.get("dry-run") === true,

@@ -1,0 +1,217 @@
+/* Keep the Payload workspace visually continuous with the public archive. */
+:root {
+  --studio-paper: #f6f7f4;
+  --studio-white: #ffffff;
+  --studio-ink: #17313b;
+  --studio-muted: #6e7d7f;
+  --studio-line: #d9e0dd;
+  --studio-blue: #1769d4;
+  --studio-cyan: #20bfd0;
+  --studio-green: #2d9a68;
+  --studio-orange: #f18a36;
+  --studio-navy: #102d46;
+  --studio-shadow: 0 18px 46px rgba(28, 62, 70, .08);
+  --color-base-0: var(--studio-white);
+  --color-base-50: var(--studio-paper);
+  --color-base-100: #edf2ef;
+  --color-base-150: var(--studio-line);
+  --color-base-200: #c8d3cf;
+  --color-base-250: #b2c1bc;
+  --color-base-300: #9bada7;
+  --color-base-400: #879392;
+  --color-base-500: var(--studio-muted);
+  --color-base-600: #587075;
+  --color-base-700: #415d68;
+  --color-base-750: #294b5a;
+  --color-base-800: var(--studio-ink);
+  --color-base-850: var(--studio-navy);
+  --color-base-900: var(--studio-navy);
+  --color-base-950: var(--studio-navy);
+  --color-base-1000: var(--studio-navy);
+  --color-success-500: var(--studio-blue);
+  --color-success-600: #0e57b6;
+  --color-success-700: #0e57b6;
+  --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+html,
+html[data-theme='dark'] {
+  --theme-bg: var(--studio-paper);
+  --theme-input-bg: var(--studio-white);
+  --theme-text: var(--studio-ink);
+  --theme-elevation-0: var(--studio-white);
+  --theme-elevation-50: var(--studio-paper);
+  --theme-elevation-100: #edf2ef;
+  --theme-elevation-150: var(--studio-line);
+  --theme-elevation-200: #c8d3cf;
+  --theme-elevation-250: #b2c1bc;
+  --theme-elevation-300: #9bada7;
+  --theme-elevation-400: #879392;
+  --theme-elevation-500: var(--studio-muted);
+  --theme-elevation-600: #587075;
+  --theme-elevation-700: #415d68;
+  --theme-elevation-750: #294b5a;
+  --theme-elevation-800: var(--studio-ink);
+  --theme-elevation-850: var(--studio-navy);
+  --theme-elevation-900: var(--studio-navy);
+  --theme-elevation-950: var(--studio-navy);
+  --theme-elevation-1000: var(--studio-navy);
+  color-scheme: light;
+}
+
+html,
+body {
+  background: var(--studio-paper) !important;
+  color: var(--studio-ink);
+}
+
+body {
+  min-height: 100%;
+  background-color: var(--studio-paper);
+  background-image: linear-gradient(rgba(23, 105, 212, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(23, 105, 212, .045) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+}
+
+aside {
+  background: rgba(255, 255, 255, .92);
+  border-right: 1px solid var(--studio-line);
+  box-shadow: none;
+}
+
+aside a,
+aside button,
+.nav-group__toggle {
+  color: var(--studio-muted);
+}
+
+aside a:hover,
+aside a:focus-visible,
+aside button:hover,
+.nav-group__toggle:hover {
+  color: var(--studio-blue);
+}
+
+.app-header {
+  background: rgba(255, 255, 255, .88);
+  border-bottom: 1px solid var(--studio-line);
+  box-shadow: none;
+  backdrop-filter: blur(12px);
+}
+
+.step-nav,
+.step-nav__home {
+  color: var(--studio-muted);
+}
+
+.step-nav a:hover,
+.step-nav a:focus-visible {
+  color: var(--studio-blue);
+}
+
+.template-default,
+.template-default__wrap,
+.dashboard,
+.collection-list,
+.collection-edit {
+  background: transparent;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: var(--studio-ink);
+  letter-spacing: -.045em;
+}
+
+.card,
+.dashboard__card,
+.collection-list__wrap,
+.collection-edit__form,
+.login-fields {
+  border-color: var(--studio-line);
+  background: var(--studio-white);
+  box-shadow: var(--studio-shadow);
+}
+
+.table-wrap,
+.table {
+  border-color: var(--studio-line);
+  background: var(--studio-white);
+}
+
+.table th {
+  color: var(--studio-muted);
+  border-color: var(--studio-line);
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.table td {
+  border-color: #edf0ee;
+}
+
+.table tr:hover td {
+  background: #fbfdfc;
+}
+
+input,
+textarea,
+select {
+  border-color: var(--studio-line);
+  background: var(--studio-white);
+  color: var(--studio-ink);
+  box-shadow: none;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--studio-blue);
+  box-shadow: 0 0 0 2px rgba(23, 105, 212, .12);
+  outline: 0;
+}
+
+.btn--style-primary {
+  --bg-color: var(--studio-blue);
+  --hover-bg: #0e57b6;
+  --color: #fff;
+}
+
+.btn--style-secondary {
+  --color: var(--studio-blue);
+  --btn-border: 1px solid #b9cee8;
+  --hover-color: var(--studio-blue);
+  --hover-btn-border: 1px solid var(--studio-blue);
+}
+
+.btn--style-subtle,
+.btn--style-pill {
+  --bg-color: #eaf4ff;
+  --hover-bg: #dcecff;
+  --color: var(--studio-blue);
+}
+
+.login {
+  min-height: 100vh;
+  background-color: var(--studio-paper);
+  background-image: linear-gradient(rgba(23, 105, 212, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(23, 105, 212, .045) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.login h1,
+.login h2 {
+  letter-spacing: -.06em;
+}
+
+.login-fields {
+  border: 1px solid var(--studio-line);
+}
+
+@media (max-width: 768px) {
+  aside {
+    background: var(--studio-white);
+  }
+}

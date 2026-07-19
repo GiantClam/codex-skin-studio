@@ -15,10 +15,10 @@ const require = createRequire(import.meta.url);
 let sharp = null;
 try { sharp = require("sharp"); } catch { /* Optional Pet image processor is bundled with ChatGPT Desktop. */ }
 
-import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
+import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, installPersistenceWorker, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
-import { buildPlist, buildTaskXml, createControlServer, parseArgs as parsePersistArgs, persistenceWorker } from "../skill/codex-skin-studio/scripts/persist.mjs";
-import { createPet, defaultPetsDir, DEFAULT_PET_CONTRACT, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
+import { buildPlist, buildTaskXml, createControlServer, ensureAppAtStartup, parseArgs as parsePersistArgs, persistenceWorker, recoverRunningApp } from "../skill/codex-skin-studio/scripts/persist.mjs";
+import { createPet, defaultPetsDir, DEFAULT_PET_CONTRACT, CUSTOM_PET_ID, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
 import { buildMacOpenSettingsScript, buildWindowsOpenSettingsScript, OPEN_ACCOUNT_MENU_EXPRESSION, OPEN_PETS_PANEL_EXPRESSION, OPEN_SETTINGS_EXPRESSION, PET_UI_STATE_EXPRESSION, petSelectionStateExpression, REFRESH_PETS_EXPRESSION, selectPetExpression } from "../skill/codex-skin-studio/scripts/pet-desktop.mjs";
 import { parseArgs as parseVerifyPetContractArgs, verifyPetContract } from "../skill/codex-skin-studio/scripts/verify-pet-contract.mjs";
 import { parseArgs as parseVerifyPetArgs, verifyPetDesktop } from "../skill/codex-skin-studio/scripts/verify-pet-desktop.mjs";
@@ -402,6 +402,45 @@ test("builds a Windows Task Scheduler worker with quoted paths", () => {
   assert.match(task, /persist\.mjs/);
   assert.match(task, /persistence-worker/);
   assert.doesNotMatch(task, /RestartOnFailure/);
+});
+
+test("application persistence is enabled through the platform installer", async () => {
+  const result = await installPersistenceWorker({
+    platformFn: () => "darwin",
+    execFileFn: async () => ({ stdout: JSON.stringify({ status: "enabled", label: "test-worker" }), stderr: "" }),
+  });
+  assert.equal(result.status, "enabled");
+  assert.equal(result.label, "test-worker");
+});
+
+test("persistence startup launches a selected theme with loopback CDP", async () => {
+  let launch = null;
+  const result = await ensureAppAtStartup({
+    port: 9341,
+    platformFn: () => "darwin",
+    readStateFn: async () => ({ themeId: "miku", themeDir: "/tmp/miku" }),
+    discoverFn: () => "/Applications/ChatGPT.app",
+    appInfoFn: () => ({ valid: true, executable: "ChatGPT" }),
+    processIdsFn: async () => [],
+    launchFn: (...args) => { launch = args; },
+  });
+  assert.equal(result.status, "launched");
+  assert.deepEqual(launch, ["/Applications/ChatGPT.app", 9341, "darwin", false]);
+});
+
+test("persistence recovers a manually opened app without CDP", async () => {
+  let restarted = null;
+  const result = await recoverRunningApp({
+    port: 9341,
+    state: { themeId: "miku", themeDir: "/tmp/miku" },
+    platformFn: () => "darwin",
+    discoverFn: () => "/Applications/ChatGPT.app",
+    appInfoFn: () => ({ valid: true, executable: "ChatGPT" }),
+    processIdsFn: async () => [321],
+    restartWorkerFn: async (port) => { restarted = port; },
+  });
+  assert.equal(result.status, "restarted");
+  assert.equal(restarted, 9341);
 });
 
 test("persistence worker remains idle after a user closes ChatGPT instead of relaunching it", async () => {
@@ -896,6 +935,7 @@ test("fake CDP lifecycle covers discovery, Session injection, status, and restar
     try { await session.open(); return await session.evaluate(expression); } finally { session.close(); }
   };
   const inject = (list, theme) => injectTheme(list, theme, { evaluateTarget });
+  let persistenceInstalled = false;
   const applied = await commandApply(root, port, {
     platformFn: () => "darwin",
     persistFn: async () => saved,
@@ -903,8 +943,11 @@ test("fake CDP lifecycle covers discovery, Session injection, status, and restar
     writeStateFn: async (value) => { state = value; },
     targetsFn: (requestedPort) => targets(requestedPort),
     injectFn: inject,
+    installPersistenceFn: async () => { persistenceInstalled = true; return { status: "enabled", label: "test-worker" }; },
   });
   assert.equal(applied.rendererCount, 1);
+  assert.equal(applied.persistence.status, "enabled");
+  assert.equal(persistenceInstalled, true);
   assert.equal(state.active, true);
   const status = await commandStatus(port, {
     platformFn: () => "darwin",
@@ -1361,6 +1404,10 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", { sk
     const validated = await validatePetDirectory(join(root, "pet"), { contract: observedPetContract });
     assert.deepEqual(validated.dimensions, { width: 128, height: 176, hasAlpha: true, cornerAlpha: [0, 0, 0, 0], cornersTransparent: true, transparentRgbResidue: 0 });
     assert.deepEqual(validated.motion.animatedRows, observedPetContract.rows.map((row) => row.name));
+    const usedFrames = validated.frames.frames.filter((frame) => !frame.neutral || frame.row !== observedPetContract.neutralLookFrame.row || frame.column !== observedPetContract.neutralLookFrame.column);
+    assert.ok(usedFrames.every((frame) => Math.abs(frame.centerOffset) <= 0.5));
+    const baselineFrames = usedFrames.filter((frame) => frame.name !== "jumping");
+    assert.equal(new Set(baselineFrames.map((frame) => frame.bottom)).size, 1);
     const installed = await installPet(join(root, "pet"), { petsDir: join(root, "pets"), contract: observedPetContract });
     assert.equal(installed.status, "installed");
     assert.equal(installed.selection, "refresh-required");
@@ -1378,6 +1425,20 @@ test("rejects a static atlas whose action rows contain duplicated frames", { ski
       createPet({ id: "static-pet", displayName: "Static Pet", frames, out: join(root, "pet"), contract: observedPetContract }),
       (error) => error.code === "PET_ANIMATION_INVALID" && /static|imperceptible/.test(error.message),
     );
+  });
+});
+
+test("installs theme Pets into one stable Custom Pet slot", { skip: !sharp && "sharp is unavailable" }, async () => {
+  await withTempDir("codex-pet-custom-slot-", async (root) => {
+    const frames = await makePetFrames(root);
+    const source = await createPet({ id: "theme-specific-pet", displayName: "Theme Specific Pet", frames, out: join(root, "pet"), contract: observedPetContract });
+    const installed = await installPet(source.directory, { petsDir: join(root, "pets"), contract: observedPetContract, targetId: CUSTOM_PET_ID, replace: true });
+    const manifest = JSON.parse(await readFile(join(installed.destination, "pet.json"), "utf8"));
+    assert.equal(installed.sourceId, "theme-specific-pet");
+    assert.equal(installed.installedId, CUSTOM_PET_ID);
+    assert.equal(manifest.id, CUSTOM_PET_ID);
+    assert.equal(manifest.displayName, "Codex Skin Studio Custom");
+    assert.equal((await petStatus({ petsDir: join(root, "pets") })).active, CUSTOM_PET_ID);
   });
 });
 
@@ -1511,6 +1572,8 @@ test("paired switch records a native Pet selection postcondition", async () => {
     });
     assert.equal(result.status, "theme-applied-pet-selected");
     assert.equal(result.pairedState.petSelection, "native-ui-confirmed");
+    assert.equal(result.pairedState.petId, CUSTOM_PET_ID);
+    assert.equal(result.petSelection.petId, CUSTOM_PET_ID);
     assert.equal((await petStatus({ petsDir: join(root, "pets") })).selection, "native-ui-confirmed");
     assert.equal((await petStatus({ petsDir: join(root, "pets") })).assetLoaded, true);
     assert.equal(JSON.parse(await readFile(join(root, "app-data", "paired-state.json"), "utf8")).petUi.selection, "native-ui-confirmed");
@@ -1556,16 +1619,32 @@ test("distribution files are English ASCII text and SKILL has valid frontmatter"
   assert.match(skill, /One-shot theme output contract/);
   assert.match(skill, /create-theme\.mjs/);
   assert.match(skill, /persist\.mjs.*install/);
+  assert.match(skill, /pause and ask whether the user wants to upload/);
+  assert.match(skill, /required post-generation step/);
+  assert.match(skill, /launches ChatGPT Desktop with loopback CDP/);
+  assert.match(skill, /manually opened ChatGPT Desktop instance/);
   assert.match(skill, /Skill installation itself only copies files/);
   assert.match(skill, /Do not use a ChatGPT Scheduled Task/);
   assert.match(skill, /status.*active/);
   assert.match(skill, /large-head and small-body/);
+  assert.match(skill, /one stable Custom Pet slot/);
+  assert.match(skill, /codex-skin-studio-custom/);
+  assert.match(skill, /Do not create a new local Pet/);
+  assert.match(skill, /installs into `codex-skin-studio-custom` by default/);
+  assert.match(skill, /First choice: a chibi humanoid or human-like character/);
+  assert.match(skill, /Second choice: a chibi anthropomorphic animal/);
+  assert.match(skill, /Never turn a supplied human or fictional humanoid subject into an animal by/);
+  assert.match(skill, /chibi humanoid character/);
   assert.match(skill, /Motion continuity acceptance standard/);
   assert.match(skill, /front-foot contact, lifted-knee passing, opposite-foot contact/);
   assert.match(skill, /Never make a row from one image plus translation, scaling, or a flip/);
   assert.match(skill, /Vision proves semantic continuity/);
   assert.match(skill, /validated PNG fallback/);
   assert.match(skill, /PET_CONTRACT_MISMATCH/);
+  assert.match(skill, /prompt[\s\S]*recommendation command/);
+  assert.match(skill, /preview image URL/);
+  assert.match(await readFile(join(skillRoot, "scripts/remote-skins.mjs"), "utf8"), /recommendSkins/);
+  assert.match(await readFile(join(skillRoot, "scripts/remote-skins.mjs"), "utf8"), /downloadUrl/);
   assert.match(skill, /create-paired\.mjs/);
   assert.match(skill, /theme-applied-pet-refresh-required/);
   assert.match(await readFile(join(skillRoot, "agents/openai.yaml"), "utf8"), /invoke \$imagegen first/);

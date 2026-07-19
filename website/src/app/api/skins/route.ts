@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     limit: bounded(url.searchParams.get('limit'), 24, 48),
   })
   return Response.json({
-    items: items.map((skin) => ({ ...skin, downloadUrl: `https://codexskinstudio.com/download/${encodeURIComponent(skin.slug)}`, installable: Boolean(skin.packageSha256) })),
+    items: items.map((skin) => ({ ...skin, installable: Boolean(skin.packageSha256), downloadRequiresGrant: true })),
     count: items.length,
   }, { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300' } })
 }

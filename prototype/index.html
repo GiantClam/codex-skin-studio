@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Skin Studio — prototype</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f5f1e8'/%3E%3Cpath d='M7 7h18v18H7z' fill='none' stroke='%2326332f'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="prototype-switcher" aria-label="Prototype views">
+      <span>Prototype</span>
+      <button class="view-button is-active" data-screen="gallery">Gallery</button>
+      <button class="view-button" data-screen="detail">Detail</button>
+      <button class="view-button" data-screen="search">Search</button>
+      <button class="view-button" data-screen="upload">Upload</button>
+      <button class="view-button" data-screen="review">Review</button>
+    </div>
+
+    <main class="app-shell">
+      <aside class="rail">
+        <a class="mark" href="#gallery" aria-label="Codex Skin Studio home">CS</a>
+        <div class="rail-rule"></div>
+        <nav>
+          <button class="rail-link is-active" data-screen="gallery"><span>01</span><b>Browse</b></button>
+          <button class="rail-link" data-screen="search"><span>02</span><b>Index</b></button>
+          <button class="rail-link" data-screen="detail"><span>03</span><b>Featured</b></button>
+        </nav>
+        <div class="rail-bottom">
+          <span>SKIN</span>
+          <span>v.01</span>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="crumb"><span class="prompt-glyph">›</span> CODEX + CHATGPT / DESKTOP THEME ARCHIVE</div>
+          <div class="topbar-actions">
+            <span class="status-dot"></span><span>PUBLIC LIBRARY</span>
+            <button class="admin-trigger" data-screen="review">Studio admin <span>↗</span></button>
+          </div>
+        </header>
+
+        <section class="screen screen-gallery is-visible" data-screen-panel="gallery">
+          <div class="gallery-intro">
+            <div class="kicker">CODEX + CHATGPT DESKTOP / THEME LIBRARY</div>
+            <h1>Make the<br /><em>thinking space</em> yours.</h1>
+            <p class="intro-copy">Curated visual skins for coding sessions, prompt work and long desktop threads. Download a complete ZIP package, then open it in Skin Studio.</p>
+            <div class="intro-meta"><span>CODEX DESKTOP</span><span>CHATGPT DESKTOP</span><span>ZIP / THEME.JSON</span></div>
+            <div class="stamp">WORKSPACE<br />READY</div>
+          </div>
+
+          <div class="section-heading">
+            <div><span class="section-index">01</span><h2>Fresh workbench skins</h2></div>
+            <button class="text-action" data-screen="search">View all themes <span>↗</span></button>
+          </div>
+
+          <div class="theme-grid">
+            <article class="theme-card theme-card-featured" data-theme="midnight arcana" data-screen="detail">
+              <div class="theme-art art-arcana"><span class="art-label">ARCANA / 001</span><span class="orb"></span><span class="constellation">✦ · · ✦<br />· ✧ · ·</span></div>
+              <div class="card-body"><div><h3>Midnight Arcana</h3><p>Codex + ChatGPT · Mystic / dark</p></div><span class="card-arrow">↗</span></div>
+            </article>
+            <article class="theme-card" data-theme="oxide field">
+              <div class="theme-art art-oxide"><span class="art-label">FIELD NOTES / 014</span><span class="topo"></span><span class="oxide-mark">07</span></div>
+              <div class="card-body"><div><h3>Oxide Field</h3><p>Codex + ChatGPT · Industrial / warm</p></div><span class="card-arrow">↗</span></div>
+            </article>
+            <article class="theme-card" data-theme="quiet terminal">
+              <div class="theme-art art-terminal"><span class="art-label">TERMINAL / 003</span><span class="terminal-lines">— — —<br />— — — —<br />— —</span><span class="blue-block"></span></div>
+              <div class="card-body"><div><h3>Quiet Terminal</h3><p>Codex · Editorial / blue</p></div><span class="card-arrow">↗</span></div>
+            </article>
+            <article class="theme-card" data-theme="green room">
+              <div class="theme-art art-green"><span class="art-label">STUDY / 009</span><span class="green-grid"></span><span class="circle-line"></span></div>
+              <div class="card-body"><div><h3>Green Room</h3><p>ChatGPT · Natural / restrained</p></div><span class="card-arrow">↗</span></div>
+            </article>
+            <article class="theme-card" data-theme="paper signal">
+              <div class="theme-art art-paper"><span class="art-label">PAPER SIGNAL / 022</span><span class="paper-fold"></span><span class="red-line"></span></div>
+              <div class="card-body"><div><h3>Paper Signal</h3><p>Codex + ChatGPT · Light / archival</p></div><span class="card-arrow">↗</span></div>
+            </article>
+          </div>
+
+          <footer class="site-footer"><span>Codex Skin Studio</span><span>Built for Codex + ChatGPT Desktop</span><span>↘ Download the format</span></footer>
+        </section>
+
+        <section class="screen screen-detail" data-screen-panel="detail">
+          <div class="detail-top"><button class="back-action" data-screen="gallery">← Back to archive</button><span class="detail-number">THEME 001 / CODEX + CHATGPT</span></div>
+          <div class="detail-layout">
+            <div class="detail-art art-arcana large-art"><span class="art-label">ARCANA / 001</span><span class="orb"></span><span class="constellation">✦ · · ✦<br />· ✧ · ·</span><span class="large-art-note">A NIGHT STUDY<br />IN COLOUR + LIGHT</span></div>
+            <div class="detail-copy"><div class="kicker">CODEX + CHATGPT DESKTOP / MYSTIC / 16:10</div><h1>Midnight<br /><em>Arcana</em></h1><p class="detail-lede">A low-light theme for long coding sessions, deep prompt work and long-running desktop threads.</p><div class="swatches"><span style="--swatch:#173247"></span><span style="--swatch:#d4c3a2"></span><span style="--swatch:#b43d2a"></span><span style="--swatch:#2b5268"></span></div><dl class="spec-list"><div><dt>Targets</dt><dd>Codex + ChatGPT</dd></div><div><dt>Version</dt><dd>1.2.0 / stable</dd></div><div><dt>Package</dt><dd>theme.zip / 3.8 MB</dd></div><div><dt>Schema</dt><dd>Codex Skin Studio / v1</dd></div></dl><div class="detail-actions"><button class="primary-action">Download theme <span>↓</span></button><button class="secondary-action">Open in Skin Studio ↗</button></div><p class="checksum">SHA-256 <code>91c4…c08a</code></p></div>
+          </div>
+          <div class="detail-bottom"><div><span class="kicker">IN THIS PACKAGE</span><span>theme.json</span><span>hero.webp</span><span>logo.webp</span></div><div><span class="kicker">DOWNLOADS</span><strong>1,284</strong></div></div>
+        </section>
+
+        <section class="screen screen-search" data-screen-panel="search">
+          <div class="search-head"><div><div class="kicker">THE INDEX / 42 DESKTOP THEMES</div><h1>Find your<br /><em>work rhythm.</em></h1></div><label class="search-input"><span>⌕</span><input id="theme-search" placeholder="Search Codex + ChatGPT skins" /><kbd>⌘ K</kbd></label></div>
+          <div class="search-layout">
+            <aside class="filter-rail">
+              <div class="filter-title">FILTERS <button id="clear-filters">Clear</button></div>
+              <div class="filter-group" data-filter-group="target"><span>Desktop target</span><button class="filter-option is-selected" data-target-filter="all">Codex + ChatGPT</button><button class="filter-option" data-target-filter="codex">Codex</button><button class="filter-option" data-target-filter="chatgpt">ChatGPT</button></div>
+              <div class="filter-group"><span>Character</span><button class="filter-option is-selected">All themes</button><button class="filter-option">Anime / 2D</button><button class="filter-option">Cyber / UI</button><button class="filter-option">Editorial</button><button class="filter-option">Minimal</button><button class="filter-option">Cozy</button></div>
+              <div class="filter-group"><span>Palette</span><button class="filter-option">Oxide red</button><button class="filter-option">Forest green</button><button class="filter-option">Cobalt blue</button><button class="filter-option">Paper</button></div>
+              <div class="filter-group"><span>Sort</span><button class="filter-option is-selected">Most recent</button><button class="filter-option">Most downloaded</button></div>
+            </aside>
+            <div class="search-results">
+              <div class="results-toolbar"><span id="result-count">05 results</span><span>Flow / 03 columns</span></div>
+              <div class="result-grid">
+                <article class="result-card" data-search-card="midnight arcana" data-targets="codex chatgpt"><div class="theme-art art-arcana small-art"><span class="art-label">001</span><span class="orb"></span></div><div><h3>Midnight Arcana</h3><p>Codex + ChatGPT · Mystic / dark <span>1.2.0</span></p></div></article>
+                <article class="result-card" data-search-card="oxide field" data-targets="codex chatgpt"><div class="theme-art art-oxide small-art"><span class="art-label">014</span><span class="oxide-mark">07</span></div><div><h3>Oxide Field</h3><p>Codex + ChatGPT · Industrial / warm <span>2.0.1</span></p></div></article>
+                <article class="result-card" data-search-card="quiet terminal" data-targets="codex"><div class="theme-art art-terminal small-art"><span class="art-label">003</span><span class="blue-block"></span></div><div><h3>Quiet Terminal</h3><p>Codex · Editorial / blue <span>1.0.2</span></p></div></article>
+                <article class="result-card" data-search-card="green room" data-targets="chatgpt"><div class="theme-art art-green small-art"><span class="art-label">009</span><span class="circle-line"></span></div><div><h3>Green Room</h3><p>ChatGPT · Natural / restrained <span>0.9.4</span></p></div></article>
+                <article class="result-card" data-search-card="paper signal" data-targets="codex chatgpt"><div class="theme-art art-paper small-art"><span class="art-label">022</span><span class="red-line"></span></div><div><h3>Paper Signal</h3><p>Codex + ChatGPT · Light / archival <span>1.1.0</span></p></div></article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen screen-admin" data-screen-panel="upload">
+          <div class="admin-head"><div><div class="kicker">STUDIO ADMIN / PACKAGE INTAKE</div><h1>Prepare a<br /><em>release.</em></h1></div><span class="admin-tag">CODEX + CHATGPT / ZIP</span></div>
+          <div class="admin-layout"><form class="upload-form" onsubmit="return false"><label>Theme package<input type="file" accept=".zip" /><span class="file-note">ZIP / max 50 MB / Codex Skin Studio validation</span></label><div class="form-row"><label>Display name<input value="Midnight Arcana" /></label><label>Version<input value="1.2.0" /></label></div><label>Description<textarea>A low-light theme for long coding sessions, deep prompt work and long-running desktop threads.</textarea></label><label>Tags<input value="codex, chatgpt, editorial" /></label><div class="form-actions"><button class="secondary-action">Save draft</button><button class="primary-action" data-screen="review">Submit for review <span>→</span></button></div></form><aside class="validation-panel"><div class="validation-head"><span class="checkmark">✓</span><div><strong>Package valid</strong><small>Validated by Codex Skin Studio</small></div></div><div class="validation-list"><div><span>✓</span><span>theme.json</span><b>found</b></div><div><span>✓</span><span>hero.webp</span><b>3.1 MB</b></div><div><span>✓</span><span>schemaVersion</span><b>v1</b></div><div><span>✓</span><span>contrast ratio</span><b>7.2:1</b></div></div><div class="package-preview"><div class="theme-art art-arcana mini-art"><span class="orb"></span></div><div><span>PREVIEW</span><strong>Midnight Arcana</strong><small>3 files / 3.8 MB</small></div></div></aside></div>
+        </section>
+
+        <section class="screen screen-admin review-screen" data-screen-panel="review">
+          <div class="review-head"><div><div class="kicker">STUDIO ADMIN / PACKAGE REVIEW</div><h1>Review<br /><em>the queue.</em></h1></div><div class="queue-count"><strong>03</strong><span>pending releases</span></div></div>
+          <div class="review-layout"><div class="queue-list"><div class="queue-toolbar"><span>PENDING / 03</span><span>Newest first ↕</span></div><button class="queue-item is-active"><div class="queue-thumb art-arcana"><span class="orb"></span></div><div><strong>Midnight Arcana</strong><span>Codex + ChatGPT · 1.2.0</span></div><b>Today</b></button><button class="queue-item"><div class="queue-thumb art-oxide"><span class="oxide-mark">07</span></div><div><strong>Oxide Field</strong><span>Codex + ChatGPT · 2.0.1</span></div><b>Yesterday</b></button><button class="queue-item"><div class="queue-thumb art-green"><span class="circle-line"></span></div><div><strong>Green Room</strong><span>ChatGPT · 0.9.4</span></div><b>17 Jul</b></button></div><aside class="review-drawer"><div class="drawer-top"><span>REVIEW / CODEX + CHATGPT</span><span class="review-status">VALIDATED</span></div><div class="theme-art art-arcana drawer-art"><span class="art-label">ARCANA / 001</span><span class="orb"></span><span class="constellation">✦ · · ✦</span></div><div class="drawer-copy"><h2>Midnight Arcana</h2><p>A low-light theme for long coding sessions, deep prompt work and long-running desktop threads.</p><div class="drawer-grid"><div><span>TARGETS</span><strong>Codex + ChatGPT</strong></div><div><span>VERSION</span><strong>1.2.0</strong></div><div><span>FILES</span><strong>3 / 3.8 MB</strong></div><div><span>SCHEMA</span><strong>Codex v1</strong></div></div><div class="review-checks"><span>✓ package structure</span><span>✓ required assets</span><span>✓ contrast</span><span>✓ checksum</span></div><div class="drawer-actions"><button class="reject-action">Reject</button><button class="primary-action" id="publish-button">Publish theme <span>↗</span></button></div></div></aside></div>
+        </section>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

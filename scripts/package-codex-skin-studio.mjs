@@ -28,6 +28,8 @@ const EXPECTED = [
   "scripts/pet-desktop.mjs",
   "scripts/persist.mjs",
   "scripts/switch-paired.mjs",
+  "scripts/remote-skins.mjs",
+  "scripts/upload-theme.mjs",
   "scripts/validate-pet.mjs",
   "scripts/verify-pet-contract.mjs",
   "scripts/verify-pet-desktop.mjs",

@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { runInNewContext } from "node:vm";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
@@ -16,7 +17,7 @@ try { sharp = require("sharp"); } catch { /* Optional Pet image processor is bun
 
 import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
-import { buildPlist, buildTaskXml, createControlServer, parseArgs as parsePersistArgs } from "../skill/codex-skin-studio/scripts/persist.mjs";
+import { buildPlist, buildTaskXml, createControlServer, parseArgs as parsePersistArgs, persistenceWorker } from "../skill/codex-skin-studio/scripts/persist.mjs";
 import { createPet, defaultPetsDir, DEFAULT_PET_CONTRACT, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
 import { buildMacOpenSettingsScript, buildWindowsOpenSettingsScript, OPEN_ACCOUNT_MENU_EXPRESSION, OPEN_PETS_PANEL_EXPRESSION, OPEN_SETTINGS_EXPRESSION, PET_UI_STATE_EXPRESSION, petSelectionStateExpression, REFRESH_PETS_EXPRESSION, selectPetExpression } from "../skill/codex-skin-studio/scripts/pet-desktop.mjs";
 import { parseArgs as parseVerifyPetContractArgs, verifyPetContract } from "../skill/codex-skin-studio/scripts/verify-pet-contract.mjs";
@@ -383,12 +384,12 @@ test("removes synthetic slash separators from an inferred brand label", async ()
   });
 });
 
-test("builds an opt-in launch agent that keeps the renderer debuggable", () => {
+test("builds an opt-in launch agent that does not keep relaunching after exit", () => {
   const plist = buildPlist({ nodePath: "/usr/local/bin/node", scriptPath: "/tmp/apply.mjs", port: 9341 });
   assert.match(plist, /com\.openai\.chatgpt\.codex-skin-studio/);
   assert.match(plist, /persistence-worker/);
   assert.match(plist, /<string>--port<\/string>/);
-  assert.match(plist, /<key>KeepAlive<\/key>\s+<true\/>/);
+  assert.doesNotMatch(plist, /<key>KeepAlive<\/key>/);
   assert.match(plist, /<key>LimitLoadToSessionType<\/key>\s+<string>Aqua<\/string>/);
   assert.match(plist, /<string>--control-port<\/string>\s+<string>9342<\/string>/);
   assert.match(buildPlist(), /persist\.mjs/);
@@ -400,6 +401,24 @@ test("builds a Windows Task Scheduler worker with quoted paths", () => {
   assert.match(task, /<Command>C:\\Program Files\\nodejs\\node\.exe<\/Command>/);
   assert.match(task, /persist\.mjs/);
   assert.match(task, /persistence-worker/);
+  assert.doesNotMatch(task, /RestartOnFailure/);
+});
+
+test("persistence worker remains idle after a user closes ChatGPT instead of relaunching it", async () => {
+  let startedControlServer = false;
+  let delayed = 0;
+  let iterations = 0;
+  const result = await persistenceWorker({
+    startControlServerFn: async () => { startedControlServer = true; },
+    platformFn: () => "darwin",
+    readStateFn: async () => ({ themeId: "miku", themeDir: "/tmp/miku" }),
+    targetsFn: async () => [],
+    delayFn: async () => { delayed += 1; },
+    continueFn: () => iterations++ === 0,
+  });
+  assert.equal(startedControlServer, true);
+  assert.equal(delayed, 1);
+  assert.deepEqual(result, { status: "stopped" });
 });
 
 test("discovers a Windows executable candidate and parses tasklist output", async () => {
@@ -1388,14 +1407,18 @@ test("uses visible ChatGPT Desktop Pets controls instead of private app state", 
   assert.match(buildWindowsOpenSettingsScript(), /SendKeys\('\^,'\)/);
   assert.match(buildWindowsOpenSettingsScript(), /AppActivate\('Codex'\)/);
   assert.match(OPEN_PETS_PANEL_EXPRESSION, /data-settings-panel-slug/);
-  assert.match(OPEN_PETS_PANEL_EXPRESSION, /slug === 'pets'/);
-  assert.match(OPEN_PETS_PANEL_EXPRESSION, /slug === 'appearance'/);
+  assert.match(OPEN_PETS_PANEL_EXPRESSION, /exact\(item, 'pet'\)/);
+  assert.match(OPEN_PETS_PANEL_EXPRESSION, /exact\(item, 'appearance'\)/);
   assert.match(OPEN_PETS_PANEL_EXPRESSION, /getBoundingClientRect/);
+  assert.match(OPEN_PETS_PANEL_EXPRESSION, /keyboard-via-cdp/);
+  assert.match(OPEN_PETS_PANEL_EXPRESSION, /closest\?\.\('button,\[role="button"\],a'\)/);
   assert.match(OPEN_SETTINGS_EXPRESSION, /settings|preferences/);
+  assert.match(OPEN_SETTINGS_EXPRESSION, /role=\\?"menuitem/);
   assert.match(OPEN_SETTINGS_EXPRESSION, /data-testid/);
   assert.match(OPEN_SETTINGS_EXPRESSION, /candidates/);
   assert.match(OPEN_ACCOUNT_MENU_EXPRESSION, /account|profile|avatar/);
   assert.match(OPEN_ACCOUNT_MENU_EXPRESSION, /aria-haspopup/);
+  assert.match(OPEN_ACCOUNT_MENU_EXPRESSION, /alreadyOpen/);
   assert.match(OPEN_ACCOUNT_MENU_EXPRESSION, /account-menu-not-found/);
   assert.match(PET_UI_STATE_EXPRESSION, /h1,h2,h3/);
   assert.match(PET_UI_STATE_EXPRESSION, /settings-panel/);
@@ -1406,6 +1429,46 @@ test("uses visible ChatGPT Desktop Pets controls instead of private app state", 
   assert.match(petSelectionStateExpression("paired-demo"), /已选/);
   assert.match(petSelectionStateExpression("paired-demo"), /assetLoaded/);
   assert.match(petSelectionStateExpression("paired-demo"), /naturalWidth/);
+});
+
+test("focuses the nearest visible clickable Pets ancestor for trusted keyboard activation", () => {
+  const events = [];
+  class TestEvent {
+    constructor(type) { this.type = type; }
+  }
+  const button = {
+    tagName: "BUTTON",
+    textContent: "宠物",
+    disabled: false,
+    getBoundingClientRect: () => ({ width: 180, height: 40 }),
+    getAttribute: (name) => name === "role" ? "button" : null,
+    closest: () => button,
+    querySelector: () => null,
+    dispatchEvent: (event) => { events.push(event.type); return true; },
+    focus: () => events.push("focus"),
+  };
+  const slug = {
+    tagName: "SPAN",
+    textContent: "宠物",
+    disabled: false,
+    getBoundingClientRect: () => ({ width: 80, height: 20 }),
+    getAttribute: (name) => name === "data-settings-panel-slug" ? "pets" : null,
+    closest: () => button,
+    querySelector: () => null,
+  };
+  const result = runInNewContext(OPEN_PETS_PANEL_EXPRESSION, {
+    document: { querySelectorAll: () => [slug, button] },
+    Event: TestEvent,
+    MouseEvent: TestEvent,
+    PointerEvent: TestEvent,
+    window: {},
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.slug, "pets");
+  assert.equal(result.clickedTag, "button");
+  assert.equal(result.activation, "keyboard-via-cdp");
+  assert.equal(result.activationKey, "Space");
+  assert.deepEqual(events, ["focus"]);
 });
 
 test("Windows Pet evidence command requires native selection and loaded asset", async () => {
@@ -1475,7 +1538,7 @@ test("paired switch preserves an explicit manual-refresh fallback when native UI
 });
 
 test("distribution files are English ASCII text and SKILL has valid frontmatter", async () => {
-  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet-desktop.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/switch-paired.mjs", "scripts/validate-pet.mjs", "scripts/verify-pet-contract.mjs", "scripts/verify-pet-desktop.mjs", "scripts/windows/apply.ps1", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
+  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet-desktop.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/remote-skins.mjs", "scripts/switch-paired.mjs", "scripts/upload-theme.mjs", "scripts/validate-pet.mjs", "scripts/verify-pet-contract.mjs", "scripts/verify-pet-desktop.mjs", "scripts/windows/apply.ps1", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
   const binaryExpected = ["examples/pets/mascot/spritesheet.webp", "examples/slayers-xellos-night/hero.webp"];
   assert.deepEqual((await listFiles(skillRoot)).map((value) => value.replaceAll("\\", "/")), [...textExpected, ...binaryExpected].sort((a, b) => a.localeCompare(b)));
   const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
@@ -1497,6 +1560,11 @@ test("distribution files are English ASCII text and SKILL has valid frontmatter"
   assert.match(skill, /Do not use a ChatGPT Scheduled Task/);
   assert.match(skill, /status.*active/);
   assert.match(skill, /large-head and small-body/);
+  assert.match(skill, /Motion continuity acceptance standard/);
+  assert.match(skill, /front-foot contact, lifted-knee passing, opposite-foot contact/);
+  assert.match(skill, /Never make a row from one image plus translation, scaling, or a flip/);
+  assert.match(skill, /Vision proves semantic continuity/);
+  assert.match(skill, /validated PNG fallback/);
   assert.match(skill, /PET_CONTRACT_MISMATCH/);
   assert.match(skill, /create-paired\.mjs/);
   assert.match(skill, /theme-applied-pet-refresh-required/);
@@ -1548,9 +1616,11 @@ test("package script creates exactly the new Skill folder contents", async () =>
     "codex-skin-studio/scripts/pet.mjs",
     "codex-skin-studio/scripts/persist.mjs",
     "codex-skin-studio/scripts/pet-desktop.mjs",
+    "codex-skin-studio/scripts/remote-skins.mjs",
     "codex-skin-studio/scripts/windows/",
     "codex-skin-studio/scripts/windows/apply.ps1",
     "codex-skin-studio/scripts/switch-paired.mjs",
+    "codex-skin-studio/scripts/upload-theme.mjs",
     "codex-skin-studio/scripts/validate-pet.mjs",
     "codex-skin-studio/scripts/verify-pet-contract.mjs",
     "codex-skin-studio/scripts/verify-pet-desktop.mjs",

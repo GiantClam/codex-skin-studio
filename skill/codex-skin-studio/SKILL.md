@@ -245,6 +245,116 @@ node "$SKILL_ROOT/scripts/create-theme.mjs" \
 
 This command creates, validates, persists, and applies the theme. Its JSON `application.status` is authoritative. If it is `scheduled`, wait for `status` to become `active` before reporting completion.
 
+## Share a theme with Codex Skin Archive
+
+Uploading is skill-only. Do not direct the user to a website submit page and do not upload a package without an explicit yes. After the theme has been created and validated, show the user the exact editable sharing metadata and ask:
+
+`Upload this theme to codexskinstudio.com and share it with other users?`
+
+The user may change the title, slug, summary, version, targets, categories, palette, display name, GitHub source URL, or license before answering. The display name and GitHub URL are the creator-promotion fields; never put a private email address, access token, or secret in them. If the user declines, keep the theme local and finish the normal apply or preview workflow.
+
+Only after an explicit acceptance, call the upload helper. For a theme-only package it performs a second local validation and builds a minimal ZIP containing `theme.json`, `hero.webp`, and explicitly declared optional assets. For a paired bundle it validates the bundle and contract, then builds the canonical ZIP containing `bundle.json`, `pet-contract.json`, `theme/theme.json`, `theme/hero.webp`, `pet/pet.json`, and the contract-selected Pet spritesheet. Both forms sign the request and report the server's `pending_review` result; upload never means that the skin is published.
+
+```bash
+node "$SKILL_ROOT/scripts/upload-theme.mjs" \
+  --theme-dir "/absolute/path/to/theme-id" \
+  --title "Theme Name" \
+  --slug "theme-id" \
+  --summary "A concise public description." \
+  --version "1.0.0" \
+  --targets "codex,chatgpt" \
+  --categories "anime-2d,cyber-ui" \
+  --palette "cyan,mixed" \
+  --author "Creator or studio name" \
+  --source-url "https://github.com/owner/repo" \
+  --license "MIT" \
+  --confirm-share \
+  --json
+```
+
+For a paired theme + Pet bundle, use the same helper with the bundle directory and observed contract:
+
+```bash
+node "$SKILL_ROOT/scripts/upload-theme.mjs" \
+  --bundle "/absolute/path/to/paired-id" \
+  --contract "$SKILL_ROOT/templates/pet-contract.json" \
+  --title "Paired Theme" \
+  --slug "paired-id" \
+  --summary "A theme and matching desktop Pet." \
+  --version "1.0.0" \
+  --targets "codex,chatgpt" \
+  --categories "anime-2d,cyber-ui" \
+  --palette "cyan,mixed" \
+  --author "Creator or studio name" \
+  --license "MIT" \
+  --confirm-share \
+  --json
+```
+
+The helper reads the provisioned secret from the protected local file
+`~/Library/Application Support/CodexSkinStudio/upload.secret` on macOS, or the
+equivalent `CodexSkinStudio/upload.secret` directory on Windows and Linux. The
+`CODEX_SKIN_STUDIO_UPLOAD_SECRET` environment variable remains an override for
+managed environments.
+
+The server accepts only requests signed by the provisioned `SKIN_STUDIO_UPLOAD_SECRET`, checks a five-minute timestamp window, applies the Cloudflare rate limiter, validates the ZIP again, rejects unsafe metadata and GitHub URLs, stores the package, and queues it as `pending_review`. Never hard-code the secret in this skill, a theme directory, a ZIP, a prompt, or a log. If the secret is missing, stop before the network request and tell the user that upload configuration is unavailable.
+
+## Browse and install published cloud skins
+
+Cloud skins are read and installed through the Skill. The website exposes only
+skins whose Payload status is `published`; drafts and `pending_review` records
+are never returned by the public catalog API. The read/download flow does not
+need a login or an upload secret.
+
+When the user asks to find a shared skin, first query the catalog and show the
+title, version, author, targets, categories, palette, summary, download count,
+and whether the package is installable. Then ask for explicit confirmation:
+
+`Install <skin title> <version> from codexskinstudio.com into ChatGPT Desktop?`
+
+```bash
+node "$SKILL_ROOT/scripts/remote-skins.mjs" list \
+  --query "cyber" \
+  --target codex \
+  --sort downloads \
+  --json
+```
+
+Only after the user agrees, install the selected slug:
+
+```bash
+node "$SKILL_ROOT/scripts/remote-skins.mjs" install \
+  --slug "theme-id" \
+  --confirm-install \
+  --json
+```
+
+`remote-skins.mjs` restricts API and archive redirects to the official HTTPS
+origins, checks the published SHA-256 checksum, parses the ZIP without invoking
+shell tools, rejects unsafe paths, symlinks, directories, duplicate entries,
+encrypted or nested archives, unsupported files, oversized content, mismatched
+ZIP headers, and suspicious compression ratios, then independently validates the
+theme or paired manifest, Pet contract, atlas dimensions, and alpha channel.
+Legacy themes delegate to `apply.mjs`; paired packages delegate to
+`switch-paired.mjs`. A paired install is complete only when the theme is
+`applied`/`active`, the Pet selection is `native-ui-confirmed`, and the loaded
+sprite asset is confirmed. `refresh-required` is reported as
+`partially_installed`, never as full success.
+
+For a verified local download without changing the active desktop skin, use:
+
+```bash
+node "$SKILL_ROOT/scripts/remote-skins.mjs" install \
+  --slug "theme-id" \
+  --confirm-install \
+  --download-only \
+  --json
+```
+
+The resulting ZIP is saved under the local `CodexSkinStudio/downloads`
+directory unless `--output` is supplied. A catalog fixture without a published
+package hash is intentionally metadata-only and cannot be installed.
+
 ## Generate a paired Pet and theme
 
 Use this workflow when the user asks for a theme and a matching ChatGPT Desktop
@@ -285,12 +395,21 @@ image for all frame files in a row:
   head, chest, eye, hair, or prop change.
 - `running-right` and `running-left`: eight alternating locomotion poses with
   opposite facing direction, changing feet, arms, body lean, and prop position.
+  Generate at least four distinct locomotion keyframes before assembly: contact
+  with the front foot, passing pose with a lifted knee, opposite-foot contact,
+  and airborne transition. The arm swing must alternate with the legs. Do not
+  create a running row by translating, scaling, mirroring, or repeating one
+  running illustration; those transforms are allowed only as small continuity
+  adjustments after the limb poses are genuinely different.
 - `waving`: four frames for hand down, hand rising, hand raised, and hand
   returning.
 - `jumping`: five frames for anticipation, lift, peak, descent, and settle.
 - `failed`: eight frames showing a clear deflated or sad reaction and recovery.
 - `waiting`: six distinct expectant poses, not copies of idle.
 - `running`: six active work or processing poses, not literal foot-running.
+  When this row represents locomotion in the target Pet, use the same
+  four-keyframe limb cycle as the directional running rows; otherwise create
+  six distinct work or processing poses.
 - `review`: six focused inspection poses with changing eyes, head tilt, or paw.
 - look-direction rows: sixteen coherent directional poses whose head, eyes,
   body, appendages, and props turn progressively clockwise.
@@ -299,6 +418,49 @@ After generation, compare adjacent frames in every row with Vision and the
 deterministic validator. If the row reads as a static contact sheet, regenerate
 that complete row once before assembly. A successful file copy is not evidence
 of animation.
+
+### Motion continuity acceptance standard
+
+Treat Image Generation as pose design, not as a source of one poster that is
+later moved around. For every action or direction row:
+
+1. Generate a canonical reference and a semantic keyframe set. A horizontal
+   multi-panel strip is acceptable when each panel is an equal-width,
+   full-body pose with no borders or labels; individual frame calls are also
+   acceptable.
+2. Crop each panel into an independent frame before atlas assembly. Preserve
+   the complete character, transparent padding, and the same camera scale.
+3. Use the keyframes in an intentional sequence. Reusing a keyframe to close a
+   loop is allowed only after the row already contains the required distinct
+   poses. Never make a row from one image plus translation, scaling, or a flip.
+4. Review the assembled row as a contact sheet. Adjacent frames must show a
+   readable state transition, not merely a different bounding-box position.
+   For locomotion, inspect feet, knees, arms, hands, torso lean, and tail. For
+   work or review, inspect paws, eyes, head angle, and the active prop. For
+   look rows, inspect progressive head, eye, body, and appendage rotation.
+5. If Vision cannot explain the state transition in plain language, reject the
+   row and regenerate the complete row. Do not repair a semantic failure with
+   CSS, atlas offsets, or deterministic pixel transforms.
+
+Minimum semantic evidence before packaging:
+
+- `running-right` and `running-left`: four distinct locomotion keyframes in
+  this order: front-foot contact, lifted-knee passing, opposite-foot contact,
+  and airborne transition; arm swing must alternate with the legs.
+- `waving`: hand down, hand rising, hand fully raised, and hand returning.
+- `jumping`: anticipation, lift, peak, descent, and settle.
+- `failed`: surprise, droop, deflation, and recovery; expand to eight frames
+  without creating duplicate adjacent states.
+- `waiting`: six expectant poses with changing eyes, paws, ears, and tail.
+- `running` or `review` when used for work: six focused coding or inspection
+  poses with changing paws, eyes, head angle, and work prop.
+- look-direction rows: eight progressive poses per row, covering all sixteen
+  directions in the contract; do not substitute mirrored neutral frames.
+
+The deterministic validator proves alpha, dimensions, safe padding, and pixel
+motion. Vision proves semantic continuity. Both checks are required. If a
+lossless WebP round trip leaves RGB data in fully transparent pixels, keep the
+validated PNG fallback instead of shipping a visually contaminated WebP.
 
 ### Pet contract gate
 
@@ -534,9 +696,9 @@ Skill installation itself only copies files and cannot start a process. On the f
 
 After upgrading or re-syncing the Skill files, run `persist.mjs install` even when the worker already reports `enabled`. The worker is a long-lived Node.js process and loads the control server and theme discovery code only at startup; re-registering the LaunchAgent refreshes `/themes` and prevents stale switch requests such as `local theme was not found`.
 
-On macOS, `persist.mjs install` creates a user-level LaunchAgent. On Windows, it creates a user-level Windows Task Scheduler task named `CodexSkinStudio`, triggered at interactive logon. Both workers are separate Node.js processes, use loopback CDP, launch ChatGPT Desktop with `--remote-debugging-address=127.0.0.1` and the selected port when needed, and reapply the theme after a renderer restart. Do not use a ChatGPT Scheduled Task for this job; it is unrelated to the local OS worker.
+On macOS, `persist.mjs install` creates a user-level LaunchAgent. On Windows, it creates a user-level Windows Task Scheduler task named `CodexSkinStudio`, triggered at interactive logon. Both workers are separate Node.js processes that reapply the theme only while a user-opened ChatGPT Desktop renderer is reachable through loopback CDP. They never launch, relaunch, or prevent the user from closing ChatGPT Desktop, and they do not block normal macOS shutdown or Windows sign-out. Do not use a ChatGPT Scheduled Task for this job; it is unrelated to the local OS worker.
 
-The persistence worker may restart ChatGPT Desktop after a normal launch and may reopen it while persistence is enabled. It never modifies `app.asar`, the application signature, or the Windows installation. Remove the platform-native worker with:
+The persistence worker never launches, relaunches, quits, or prevents closing ChatGPT Desktop. It never modifies `app.asar`, the application signature, or the Windows installation. Remove the platform-native worker with:
 
 ```bash
 node "$SKILL_ROOT/scripts/persist.mjs" uninstall --json

@@ -9,26 +9,19 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import {
-  appInfoSync,
   clearFailureState,
   commandApply,
   delay,
-  discover,
   evaluateAll,
   injectTheme,
   injectionVerified,
   isSupportedPlatform,
-  isPidRunning,
-  launchApplication,
   listThemes,
-  processIds,
-  quitApplication,
   readState,
   savedTheme,
   selectMainTarget,
   STATUS_EXPRESSION,
   targets,
-  waitForProcessExit,
   writeState,
 } from "./apply.mjs";
 
@@ -77,8 +70,6 @@ function buildPlist({ nodePath = process.execPath, scriptPath = fileURLToPath(im
 ${argumentsXml}
   </array>
   <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
   <true/>
   <key>ProcessType</key>
   <string>Interactive</string>
@@ -144,10 +135,6 @@ function buildTaskXml({ nodePath = process.execPath, scriptPath = fileURLToPath(
     <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <RestartOnFailure>
-      <Interval>PT1M</Interval>
-      <Count>3</Count>
-    </RestartOnFailure>
   </Settings>
   <Actions Context="Author">
     <Exec>
@@ -195,7 +182,7 @@ async function registerWindowsTask({ nodePath = process.execPath, scriptPath = f
     `$action = New-ScheduledTaskAction -Execute ${powershellQuote(nodePath)} -Argument ${powershellQuote(argumentsValue)} -WorkingDirectory ${powershellQuote(dirname(scriptPath))}`,
     `$trigger = New-ScheduledTaskTrigger -AtLogOn -User ${powershellQuote(userId)}`,
     `$principal = New-ScheduledTaskPrincipal -UserId ${powershellQuote(userId)} -LogonType Interactive -RunLevel Limited`,
-    "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)",
+    "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries",
     `Register-ScheduledTask -TaskName ${powershellQuote(TASK_NAME)} -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null`,
   ].join("; ");
   await powershell(command);
@@ -252,10 +239,6 @@ async function persistenceStatus() {
     running = Boolean(result?.stdout && /state = running/.test(result.stdout));
   }
   return { status: running ? "enabled" : installed ? "installed" : "disabled", label: LABEL, plistPath: PLIST_PATH, loaded, running };
-}
-
-function launchDebug(app, port) {
-  return launchApplication(app, port);
 }
 
 function sendJson(response, statusCode, value) {
@@ -338,78 +321,55 @@ async function startControlServer({ port = CONTROL_PORT, cdpPort = PORT, createS
   return server;
 }
 
-async function quitChatGPT(info, pids) {
-  return quitApplication(info, pids);
-}
-
-async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, pollMs = 1500, normalLaunchGraceMs = 5000, launchFn = launchDebug, quitFn = quitChatGPT, startControlServerFn = startControlServer } = {}) {
-  if (!isSupportedPlatform(platform())) throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
+async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, pollMs = 1500, startControlServerFn = startControlServer, platformFn = platform, delayFn = delay, readStateFn = readState, targetsFn = targets, selectMainTargetFn = selectMainTarget, evaluateListFn = evaluateAll, injectionVerifiedFn = injectionVerified, savedThemeFn = savedTheme, injectThemeFn = injectTheme, writeStateFn = writeState, continueFn = () => true } = {}) {
+  if (!isSupportedPlatform(platformFn())) throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
   const applyLock = { active: false };
   await startControlServerFn({ port: controlPort, cdpPort: port, applyLock });
-  let noCdpSince = 0;
-  while (true) {
+  while (continueFn()) {
     try {
       if (applyLock.active) {
-        noCdpSince = 0;
-        await delay(pollMs);
+        await delayFn(pollMs);
         continue;
       }
-      const state = await readState();
+      const state = await readStateFn();
       if (!state?.themeDir || typeof state.themeId !== "string") {
-        noCdpSince = 0;
-        await delay(pollMs * 2);
+        await delayFn(pollMs * 2);
         continue;
       }
-      const list = await targets(port).catch(() => []);
+      const list = await targetsFn(port).catch(() => []);
       if (applyLock.active) {
-        noCdpSince = 0;
-        await delay(pollMs);
+        await delayFn(pollMs);
         continue;
       }
       if (list.length) {
-        const main = await selectMainTarget(list, undefined, { allowTransient: true });
+        const main = await selectMainTargetFn(list, undefined, { allowTransient: true });
         if (main) {
-          const live = (await evaluateAll([main], STATUS_EXPRESSION))[0];
-          if (!injectionVerified(live, state.themeId, state.assetFlags)) {
+          const live = (await evaluateListFn([main], STATUS_EXPRESSION))[0];
+          if (!injectionVerifiedFn(live, state.themeId, state.assetFlags)) {
             if (applyLock.active) {
-              noCdpSince = 0;
-              await delay(pollMs);
+              await delayFn(pollMs);
               continue;
             }
             applyLock.active = true;
             try {
-              const saved = await savedTheme(state);
-              await injectTheme(list, saved);
-              await writeState({ ...clearFailureState(state), active: true, restartPending: false, restartWorkerPid: null, reappliedAt: new Date().toISOString() });
+              const saved = await savedThemeFn(state);
+              await injectThemeFn(list, saved);
+              await writeStateFn({ ...clearFailureState(state), active: true, restartPending: false, restartWorkerPid: null, reappliedAt: new Date().toISOString() });
             } finally {
               applyLock.active = false;
             }
           }
         }
-        noCdpSince = 0;
-        await delay(pollMs);
+        await delayFn(pollMs);
         continue;
       }
-
-      const app = discover();
-      const info = app ? appInfoSync(app) : null;
-      const pids = info?.executable ? await processIds(info.executable) : [];
-      if (!pids.length) {
-        if (app) launchFn(app, port);
-        noCdpSince = Date.now();
-      } else if (!noCdpSince) {
-        noCdpSince = Date.now();
-      } else if (Date.now() - noCdpSince >= normalLaunchGraceMs) {
-        await quitFn(info, pids);
-        await waitForProcessExit(pids, { isPidRunning, timeoutMs: 10000, intervalMs: 250 });
-        if (app) launchFn(app, port);
-        noCdpSince = Date.now();
-      }
     } catch {
-      noCdpSince = 0;
+      // A renderer can disappear during a normal user quit or system shutdown.
+      // Keep the worker idle and wait for a future user-initiated launch.
     }
-    await delay(pollMs);
+    await delayFn(pollMs);
   }
+  return { status: "stopped" };
 }
 
 async function main() {

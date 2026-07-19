@@ -333,7 +333,8 @@ When the user provides a natural-language prompt such as `anime cyan`,
 recommendation command. It queries the public catalog, ranks published themes
 by keyword, category, palette, and download relevance, and returns a compact
 visual/text result for each recommendation: title, version, author, summary,
-preview image URL when published, detail page URL, and direct download URL.
+preview image URL when published, detail page URL, and whether a verified package
+can be installed. Permanent package download URLs are intentionally not returned.
 
 ```bash
 node "$SKILL_ROOT/scripts/remote-skins.mjs" recommend \
@@ -344,7 +345,7 @@ node "$SKILL_ROOT/scripts/remote-skins.mjs" recommend \
 ```
 
 Without `--json`, the command prints Markdown recommendation cards with image
-previews, descriptions, detail links, and download links. Use `--json` when the
+previews, descriptions, and detail links. Use `--json` when the
 Skill needs to present or further filter the result programmatically. Only
 published catalog records are returned; an absent preview image is reported as
 `imageUrl: null`, while the trusted detail page remains available.
@@ -372,8 +373,11 @@ node "$SKILL_ROOT/scripts/remote-skins.mjs" install \
   --json
 ```
 
-`remote-skins.mjs` restricts API and archive redirects to the official HTTPS
-origins, checks the published SHA-256 checksum, parses the ZIP without invoking
+`remote-skins.mjs` requests a short-lived, single-use download grant only after
+the explicit install confirmation. The website binds that grant to the skin
+slug and published SHA-256, serves the package from a private R2 object, and
+rejects replayed or expired grants. The Skill restricts API and archive
+redirects to the official HTTPS origins, checks the published SHA-256 checksum, parses the ZIP without invoking
 shell tools, rejects unsafe paths, symlinks, directories, duplicate entries,
 encrypted or nested archives, unsupported files, oversized content, mismatched
 ZIP headers, and suspicious compression ratios, then independently validates the

@@ -2,6 +2,9 @@
 
 Payload + Next.js application for a public Codex / ChatGPT Desktop skin archive.
 
+Published metadata and preview images are public. ZIP packages are stored in
+private R2 and are served only through a short-lived, single-use download grant.
+
 ## Product boundary
 
 - Visitors browse and download published ZIP packages without registration.
@@ -28,7 +31,8 @@ Optional abuse protection variables:
 
 1. The production D1 database and R2 bucket are already declared in `wrangler.jsonc`.
 2. Set `PAYLOAD_SECRET` with `wrangler secret put PAYLOAD_SECRET`.
-3. Run `npm run generate:types`, then `npm run deploy`.
+3. Set `SKIN_STUDIO_DOWNLOAD_SECRET` with `wrangler secret put SKIN_STUDIO_DOWNLOAD_SECRET`.
+4. Run `npm run generate:types`, then `npm run deploy`.
 
 `npm run deploy` applies Payload migrations to the remote D1 database before deploying the Worker. Rate limiting is attached through two native Cloudflare bindings: five manual submissions per IP per minute and ten GitHub imports per IP per minute. Cloudflare's native binding configuration is documented in [Workers Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 

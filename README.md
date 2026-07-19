@@ -1,4 +1,4 @@
-# ChatGPT Desktop Skin Studio
+# Codex Theme Studio Skill
 
 [中文 README](README.zh-CN.md)
 
@@ -6,7 +6,7 @@ AI-orchestrated skins for ChatGPT Desktop on macOS and Windows.
 
 This repository contains the `codex-skin-studio` Codex Skill and its lightweight Node.js runtime. The theme path remains zero-dependency; the optional Pet atlas path uses the `sharp` runtime bundled with ChatGPT Desktop when available. The Skill turns a generated or user-provided image into a complete ChatGPT Desktop theme, validates the local assets, applies the theme through loopback CDP, and can keep the selected theme alive across app and computer restarts through macOS `launchd` or Windows Task Scheduler.
 
-This project uses [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) as a research and design reference. It is an independent lightweight implementation, not a complete fork with modifications, and does not claim feature parity. The current scope is a Codex Skill plus a lightweight local runtime; a dedicated skin website is planned as a separate expansion.
+This project uses [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) as a research and design reference. It is an independent lightweight implementation, not a complete fork with modifications, and does not claim feature parity. The website is now maintained separately in [codex-theme-studio](https://github.com/GiantClam/codex-theme-studio).
 
 The current application is ChatGPT Desktop. macOS identifies it with bundle identifier `com.openai.codex`. Windows supports the official standalone Codex / ChatGPT Desktop client, including Microsoft Store (MSIX) and conventional executable installs; the runtime discovers the installed app instead of using a user-specific path.
 
@@ -38,7 +38,7 @@ privileges.
 - Theme creation also converts the final Hero, logo, and portrait assets to `.webp` on disk and updates `theme.json` automatically.
 - Contract-driven Pet generation: cartoonized, anthropomorphic, large-head/small-body companions assembled into validated Codex V2 8x11 RGBA PNG/WebP atlases with 16 look directions.
 - Paired theme + Pet bundles with atomic Pet installation, local status reporting, and one switch command that applies the theme and attempts native Pets Refresh and selection.
-- No `app.asar` modification, code-signature changes, database, website, remote service, or arbitrary theme CSS.
+- No `app.asar` modification, code-signature changes, database, remote service, or arbitrary theme CSS.
 - English-only Skill distribution files; the Skill can respond to users in their language.
 
 ## Architecture

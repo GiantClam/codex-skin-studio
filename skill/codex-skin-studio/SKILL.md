@@ -424,6 +424,8 @@ Every generated Pet must be:
 - chibi humanoid or anthropomorphic, with readable expressions and work-state poses;
 - large-head and small-body, with the head as the first visual focus;
 - consistent across all action frames;
+- exactly one visible character per frame cell; never keep a duplicate, partial,
+  or neighboring second character from a generated strip;
 - free of text, logos, watermarks, extra characters, UI, hard shadows, and cropped limbs.
 
 ### Representation priority
@@ -462,7 +464,10 @@ character's identity or defining details.
    animal` and keep the other constraints.
 8. Use a flat `#00FF00` background for generated action images when native transparency is not available. Do not retain the chroma-key background in the installed atlas.
 9. Inspect the generated reference and action frames with Vision. Reject a frame if the character is photorealistic, loses the requested humanoid-or-animal representation, loses the large-head/small-body ratio, changes identity, contains extra content, or is cropped.
-10. If native Image Generation is unavailable, report its exact error and stop. Do not call an external image service or request an API key automatically.
+10. Inspect every cropped frame cell for a second horizontally separated character. A
+    partial neighbor at the left or right edge is still an extra character and the
+    complete source frame must be regenerated or recropped before atlas assembly.
+11. If native Image Generation is unavailable, report its exact error and stop. Do not call an external image service or request an API key automatically.
 
 Use an explicit sequential pose brief for every row; never reuse one generated
 image for all frame files in a row:
@@ -505,7 +510,9 @@ later moved around. For every action or direction row:
    full-body pose with no borders or labels; individual frame calls are also
    acceptable.
 2. Crop each panel into an independent frame before atlas assembly. Preserve
-   the complete character, transparent padding, and the same camera scale.
+   the complete character, transparent padding, and the same camera scale. Confirm
+   that the crop contains exactly one character; do not let an adjacent panel or
+   duplicate character bleed into the cell.
 3. Use the keyframes in an intentional sequence. Reusing a keyframe to close a
    loop is allowed only after the row already contains the required distinct
    poses. Never make a row from one image plus translation, scaling, or a flip.
@@ -533,10 +540,11 @@ Minimum semantic evidence before packaging:
 - look-direction rows: eight progressive poses per row, covering all sixteen
   directions in the contract; do not substitute mirrored neutral frames.
 
-The deterministic validator proves alpha, dimensions, safe padding, and pixel
-motion. Vision proves semantic continuity. Both checks are required. If a
-lossless WebP round trip leaves RGB data in fully transparent pixels, keep the
-validated PNG fallback instead of shipping a visually contaminated WebP.
+The deterministic validator proves alpha, dimensions, safe padding, one visible
+character per used cell, and pixel motion. Vision proves semantic continuity.
+Both checks are required. If a lossless WebP round trip leaves RGB data in fully
+transparent pixels, keep the validated PNG fallback instead of shipping a
+visually contaminated WebP.
 
 ### Pet contract gate
 
@@ -629,9 +637,12 @@ jumping row is the only row that preserves intentional vertical displacement.
 This prevents source-image padding from becoming sprite spacing or animation
 sampling drift. `validate-pet.mjs` checks the manifest,
 `spriteVersionNumber`, row frame counts, unused-cell transparency, dimensions,
-alpha channel, transparent corners, paths, file size, and visible frame motion
-for every action and look-direction row. Vision remains
-responsible for semantic checks that pixels alone cannot prove. `install-pet.mjs`
+alpha channel, transparent corners, paths, file size, one-character-per-cell
+integrity, and visible frame motion for every action and look-direction row.
+The one-character check rejects multiple significant horizontally separated
+visible components, including a full character plus a partial neighbor from a
+multi-panel source strip. Vision remains responsible for semantic checks that
+pixels alone cannot prove. `install-pet.mjs`
 uses an atomic sibling-directory replacement and never deletes another Pet ID.
 It installs into `codex-skin-studio-custom` by default. Use `--target-id` only
 for an explicit low-level migration or test; normal theme and paired workflows
@@ -643,7 +654,10 @@ Supported stable errors include `PET_INPUT_INVALID`, `PET_CONTRACT_MISMATCH`,
 `PET_INSTALL_FAILED`. `PET_ANIMATION_INVALID` means at least one action or
 look-direction row contains duplicated or imperceptibly changing adjacent
 frames; regenerate that row with visible pose, limb, expression, or direction
-changes before installing.
+changes before installing. `PET_SPRITESHEET_INVALID` with `multiple visible
+character components` means a used frame cell contains more than one significant
+horizontally separated character; recrop or regenerate the source frame and
+validate the complete atlas again before installing.
 
 Inspect local Pet state with:
 

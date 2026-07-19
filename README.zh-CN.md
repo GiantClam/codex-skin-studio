@@ -1,4 +1,4 @@
-# ChatGPT Desktop Skin Studio
+# Codex Theme Studio Skill
 
 [English README](README.md)
 
@@ -6,7 +6,7 @@
 
 本仓库包含 `codex-skin-studio` Codex Skill 以及轻量 Node.js 工具链。主题换肤路径保持零依赖；可选 Pet 精灵图路径使用 ChatGPT Desktop 随附的 `sharp` 运行时（如果可用）。Skill 可以把生图结果或用户提供的图片制作成完整主题，校验本地资源，通过本机回环 CDP 应用到 ChatGPT Desktop，并通过 macOS LaunchAgent 或 Windows Task Scheduler 在电脑登录、应用启动和 Renderer 重载后自动恢复。
 
-本项目仅将 [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) 作为研究和设计参考，独立实现轻量版本，不是对其完整仓库 Fork 后修改，也不宣称功能完全一致。当前范围是 Codex Skill 加轻量本地运行时，后续计划独立扩展皮肤网站能力。
+本项目仅将 [HeiGeAi/heige-codex-skin-studio](https://github.com/HeiGeAi/heige-codex-skin-studio) 作为研究和设计参考，独立实现轻量版本，不是对其完整仓库 Fork 后修改，也不宣称功能完全一致。网站现已独立维护于 [codex-theme-studio](https://github.com/GiantClam/codex-theme-studio)。
 
 当前应用名称是 ChatGPT Desktop。macOS 技术 Bundle ID 为 `com.openai.codex`；Windows 已支持官方独立版 Codex / ChatGPT Desktop 客户端，包括 Microsoft Store（MSIX）安装和普通可执行文件安装。运行时会自动发现客户端，不依赖具体用户名、盘符或 `WindowsApps` 路径。
 

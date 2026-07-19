@@ -1418,6 +1418,26 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", { sk
   });
 });
 
+test("rejects a frame containing a second horizontally separated character", { skip: !sharp && "sharp is unavailable" }, async () => {
+  await withTempDir("codex-pet-multi-character-", async (root) => {
+    const frames = await makePetFrames(root);
+    const created = await createPet({ id: "multi-character-pet", displayName: "Multi Character Pet", frames, out: join(root, "pet"), contract: observedPetContract });
+    const badPet = join(root, "bad-pet");
+    await mkdir(badPet, { recursive: true });
+    const manifest = JSON.parse(await readFile(join(created.directory, "pet.json"), "utf8"));
+    manifest.spritesheetPath = "spritesheet.png";
+    await writeFile(join(badPet, "pet.json"), JSON.stringify(manifest));
+    await sharp(created.spritesheetPath)
+      .composite([{ input: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="3" height="10"><rect width="3" height="10" rx="1" fill="#ff5577"/></svg>'), left: 0, top: 4 }])
+      .png()
+      .toFile(join(badPet, "spritesheet.png"));
+    await assert.rejects(
+      validatePetDirectory(badPet, { contract: observedPetContract }),
+      (error) => error.code === "PET_SPRITESHEET_INVALID" && /multiple visible character components/.test(error.message),
+    );
+  });
+});
+
 test("rejects a static atlas whose action rows contain duplicated frames", { skip: !sharp && "sharp is unavailable" }, async () => {
   await withTempDir("codex-pet-static-", async (root) => {
     const frames = await makePetFrames(root, observedPetContract, { animate: false });

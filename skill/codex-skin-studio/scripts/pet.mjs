@@ -27,6 +27,11 @@ const DEFAULT_MAX_INPUT_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MAX_ATLAS_BYTES = 20 * 1024 * 1024;
 const MOTION_PIXEL_DELTA = 12;
 const MOTION_PIXEL_FRACTION = 0.001;
+const MULTI_CHARACTER_AREA_RATIO = 0.2;
+const MULTI_CHARACTER_HEIGHT_RATIO = 0.45;
+const MULTI_CHARACTER_WIDTH_RATIO = 0.2;
+const MULTI_CHARACTER_CENTER_DISTANCE_RATIO = 0.2;
+const MULTI_CHARACTER_VERTICAL_OVERLAP_RATIO = 0.55;
 const PET_SPRITE_VERSION = 2;
 const FRAME_HORIZONTAL_PADDING_RATIO = 0.04;
 const FRAME_TOP_PADDING_RATIO = 0.04;
@@ -413,6 +418,43 @@ async function validateFrameCells(file, contract) {
   const frameWidth = contract.frame.width;
   const frameHeight = contract.frame.height;
   const frames = [];
+  const componentsForCell = (row, column) => {
+    const seen = new Uint8Array(frameWidth * frameHeight);
+    const components = [];
+    const visible = (x, y) => data[((row * frameHeight + y) * info.width + column * frameWidth + x) * 4 + 3] > 0;
+    for (let y = 0; y < frameHeight; y += 1) {
+      for (let x = 0; x < frameWidth; x += 1) {
+        const start = y * frameWidth + x;
+        if (seen[start] || !visible(x, y)) continue;
+        const queue = [[x, y]];
+        const component = { area: 0, left: x, top: y, right: x, bottom: y };
+        seen[start] = 1;
+        for (let head = 0; head < queue.length; head += 1) {
+          const [currentX, currentY] = queue[head];
+          component.area += 1;
+          component.left = Math.min(component.left, currentX);
+          component.top = Math.min(component.top, currentY);
+          component.right = Math.max(component.right, currentX);
+          component.bottom = Math.max(component.bottom, currentY);
+          for (let deltaY = -1; deltaY <= 1; deltaY += 1) {
+            for (let deltaX = -1; deltaX <= 1; deltaX += 1) {
+              if (!deltaX && !deltaY) continue;
+              const nextX = currentX + deltaX;
+              const nextY = currentY + deltaY;
+              if (nextX < 0 || nextY < 0 || nextX >= frameWidth || nextY >= frameHeight) continue;
+              const next = nextY * frameWidth + nextX;
+              if (!seen[next] && visible(nextX, nextY)) {
+                seen[next] = 1;
+                queue.push([nextX, nextY]);
+              }
+            }
+          }
+        }
+        components.push({ ...component, width: component.right - component.left + 1, height: component.bottom - component.top + 1 });
+      }
+    }
+    return components.sort((left, right) => right.area - left.area);
+  };
   for (let row = 0; row < contract.grid.rows; row += 1) {
     const rowSpecValue = rowSpec(contract.rows[row]);
     for (let column = 0; column < contract.grid.columns; column += 1) {
@@ -438,6 +480,26 @@ async function validateFrameCells(file, contract) {
         continue;
       }
       if (right < 0) throw petError("PET_SPRITESHEET_INVALID", `frame ${row}:${column} contains no visible character`);
+      const components = componentsForCell(row, column);
+      const largest = components[0];
+      const secondary = components.slice(1).find((component) => (
+        (() => {
+          const verticalOverlap = Math.max(0, Math.min(largest.bottom, component.bottom) - Math.max(largest.top, component.top) + 1);
+          const centerDistance = Math.abs((largest.left + largest.right - component.left - component.right) / 2);
+          return component.area >= largest.area * MULTI_CHARACTER_AREA_RATIO
+            && component.height >= largest.height * MULTI_CHARACTER_HEIGHT_RATIO
+            && component.width >= largest.width * MULTI_CHARACTER_WIDTH_RATIO
+            && centerDistance >= frameWidth * MULTI_CHARACTER_CENTER_DISTANCE_RATIO
+            && verticalOverlap >= Math.min(largest.height, component.height) * MULTI_CHARACTER_VERTICAL_OVERLAP_RATIO;
+        })()
+      ));
+      if (secondary) {
+        throw petError("PET_SPRITESHEET_INVALID", `frame ${rowSpecValue.name}:${column} contains multiple visible character components`, {
+          row,
+          column,
+          components: components.slice(0, 4),
+        });
+      }
       const padding = Math.min(left, top, frameWidth - 1 - right, frameHeight - 1 - bottom);
       if (padding < Math.floor(Math.min(frameWidth, frameHeight) * 0.02)) throw petError("PET_SPRITESHEET_INVALID", `frame ${row}:${column} is cropped or lacks safe padding`);
       const centerX = (left + right) / 2;

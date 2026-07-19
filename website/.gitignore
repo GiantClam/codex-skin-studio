@@ -1,9 +1,0 @@
-.next/
-.open-next/
-.wrangler/
-node_modules/
-*.tsbuildinfo
-*.local
-.env
-.env.*
-!.env.example

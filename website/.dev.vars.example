@@ -1,3 +1,0 @@
-# Keep this value out of git. The same secret must be provisioned to the
-# local Codex Skin Studio skill as CODEX_SKIN_STUDIO_UPLOAD_SECRET.
-SKIN_STUDIO_UPLOAD_SECRET=replace-with-a-long-random-secret

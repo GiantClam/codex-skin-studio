@@ -8,6 +8,11 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { validateImageMetadata } from "./image-metadata.mjs";
+import { withOperationLock } from "./operation-lock.mjs";
+import { readProcessIdentity } from "./process-identity.mjs";
+import { classifyCodexTarget } from "./target-classifier.mjs";
+
 const PORT = 9341;
 const PERSIST_CONTROL_PORT = 9342;
 const SWITCHER_PORT = 9342;
@@ -64,7 +69,7 @@ function commandErrorCode(error) {
   if (preservedCodes.has(explicit)) return explicit;
   const message = String(error?.message || error || "").toLowerCase();
   if (/port must be an integer/.test(message)) return "INVALID_PORT";
-  if (/theme manifest|theme schema|theme id|theme name|hero must|logo must|polaroid must|theme colors|theme copy|copy\.|six-digit hex|contrast ratio|theme directory|theme\.json|hero escapes/.test(message)) return "THEME_INVALID";
+  if (/theme manifest|theme schema|theme id|theme name|hero must|logo must|polaroid must|theme colors|theme copy|copy\.|six-digit hex|contrast ratio|theme directory|theme\.json|hero escapes|image header|image mime|image dimensions|image pixel|image aspect|unsupported.*image/.test(message)) return "THEME_INVALID";
   if (/chatgpt desktop application was not found|chatgpt desktop application validation failed|codex application was not found|codex application validation failed|application discovery|application validation/.test(message)) return "APP_UNAVAILABLE";
   if (/main codex renderer was not found|no eligible codex renderer/.test(message)) return "NO_ELIGIBLE_RENDERER";
   if (/injection|renderer evaluation failed|hero.*decoded|renderer did not become ready/.test(message)) return "INJECTION_FAILED";
@@ -188,6 +193,7 @@ async function loadTheme(themeDir) {
     if (!inside(root, asset) || !inside(realRoot, await realpath(asset))) throw new Error(`${field} escapes the theme directory`);
     const info = await lstat(asset);
     if (!info.isFile() || info.size < 1) throw new Error(`${field} must be a non-empty regular file`);
+    validateImageMetadata(await readFile(asset), { expectedMime: MIME[extname(asset).toLowerCase()] });
     return asset;
   };
   const hero = await resolveAsset(manifest.hero, "hero");
@@ -325,7 +331,7 @@ async function targets(port, timeoutMs = 10000) {
     const list = await response.json();
     if (!Array.isArray(list)) throw new Error("CDP discovery returned malformed target list");
     return list.filter((target) => {
-      if (!target || target.type !== "page" || typeof target.url !== "string" || !target.url.startsWith("app://") || typeof target.webSocketDebuggerUrl !== "string" || isSecondaryTarget(target)) return false;
+      if (!target || typeof target.webSocketDebuggerUrl !== "string" || classifyCodexTarget(target) === "unknown" || isSecondaryTarget(target)) return false;
       try {
         const debuggerUrl = new URL(target.webSocketDebuggerUrl);
         return debuggerUrl.protocol === "ws:" && debuggerUrl.hostname === "127.0.0.1" && debuggerUrl.port === String(port) && debuggerUrl.pathname.startsWith("/");
@@ -339,7 +345,7 @@ async function targets(port, timeoutMs = 10000) {
 }
 
 function isSecondaryTarget(target) {
-  return /avatar-overlay|notification|permission|settings\/popup/i.test(target?.url || "");
+  return classifyCodexTarget(target) === "overlay" || /avatar-overlay|notification|permission|settings\/popup/i.test(target?.url || "");
 }
 
 function isUnavailableListenerError(error) {
@@ -997,7 +1003,13 @@ async function persist(theme, { themesDir = THEMES, deferred = false } = {}) {
 async function writeState(value) {
   await mkdir(ROOT, { recursive: true });
   const temporary = `${STATE}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temporary, `${json({ schemaVersion: 1, ...value })}\n`, "utf8");
+  const current = await readState().catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  const previousRevision = Number.isSafeInteger(current?.revision) ? current.revision : 0;
+  const requestedRevision = Number.isSafeInteger(value?.revision) ? value.revision : 0;
+  await writeFile(temporary, `${json({ schemaVersion: 1, revision: Math.max(previousRevision + 1, requestedRevision), ...value })}\n`, "utf8");
   await rename(temporary, STATE);
 }
 async function removeState(statePath = STATE) {
@@ -1368,7 +1380,7 @@ async function cancelWorker(pid, { processKillFn = process.kill, isPidRunning: i
   if (!await waitForProcessExit([pid], { isPidRunning: isPidRunningFn, delayFn, timeoutMs: 2000, intervalMs: 25 })) throw new Error("restart worker did not exit after cancellation");
 }
 
-async function restartWorkerCoreImpl(port, { normal = false, requireArmed = false, processPidFn = () => process.pid, delayFn = delay, nowFn = Date.now, restartTimeoutMs = 20000, platformFn = platform, discoverFn = discover, appInfoFn = appInfoSync, quitFn, launchFn, targetsFn = targets, selectTargetFn = selectMainTarget, injectFn = injectTheme, savedThemeFn = savedTheme, readStateFn = readState, writeStateFn = writeState, processIdsFn = processIds, isPidRunning, processExitConfirmedFn } = {}) {
+async function restartWorkerCoreImpl(port, { normal = false, requireArmed = false, processPidFn = () => process.pid, delayFn = delay, nowFn = Date.now, restartTimeoutMs = 20000, platformFn = platform, discoverFn = discover, appInfoFn = appInfoSync, quitFn, launchFn, targetsFn = targets, selectTargetFn = selectMainTarget, injectFn = injectTheme, savedThemeFn = savedTheme, readStateFn = readState, writeStateFn = writeState, processIdsFn = processIds, readProcessIdentityFn = readProcessIdentity, isPidRunning, processExitConfirmedFn } = {}) {
   const currentPlatform = platformFn();
   if (!isSupportedPlatform(currentPlatform)) throw new Error("Codex Skin Studio supports macOS and Windows only");
   await delayFn(1500);
@@ -1381,9 +1393,15 @@ async function restartWorkerCoreImpl(port, { normal = false, requireArmed = fals
   const info = appInfoFn(app);
   if (!info?.valid) throw new Error(`${APP_DISPLAY_NAME} application validation failed`);
   const oldPids = await processIdsFn(info.executable);
+  const oldIdentities = await Promise.all(oldPids.map((pid) => readProcessIdentityFn(pid, { platform: currentPlatform })));
   const quit = quitFn || (() => quitApplication(info, oldPids, currentPlatform));
   await quit();
   if (!await waitForProcessExit(oldPids, { isPidRunning, delayFn })) throw new Error("Codex process did not exit after quit request");
+  for (const [index, identity] of oldIdentities.entries()) {
+    if (!identity) continue;
+    const current = await readProcessIdentityFn(oldPids[index], { platform: currentPlatform });
+    if (current && current.startedAt === identity.startedAt) throw new Error("Codex process identity did not change after quit request");
+  }
   let processExited = true;
   try {
     processExitConfirmedFn?.();
@@ -1485,7 +1503,7 @@ async function commandValidate(dir) {
   return { status: "valid", themeId: theme.manifest.id, themeDir: theme.root, hero: theme.manifest.hero, ...(theme.manifest.logo ? { logo: theme.manifest.logo } : {}), ...(theme.manifest.polaroid ? { polaroid: theme.manifest.polaroid } : {}), ...(theme.manifest.copy ? { copy: theme.manifest.copy } : {}) };
 }
 
-async function commandApply(dir, port, { persistFn = persist, writeStateFn = writeState, readStateFn = readState, removeStateFn = removeState, targetsFn = targets, spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, injectFn = injectTheme, installPersistenceFn = null, platformFn = platform } = {}) {
+async function commandApplyUnlocked(dir, port, { persistFn = persist, writeStateFn = writeState, readStateFn = readState, removeStateFn = removeState, targetsFn = targets, spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, injectFn = injectTheme, installPersistenceFn = null, platformFn = platform } = {}) {
   if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   let theme;
   try { theme = await loadTheme(dir); } catch (error) { error.code = "THEME_INVALID"; throw error; }
@@ -1546,6 +1564,11 @@ async function commandApply(dir, port, { persistFn = persist, writeStateFn = wri
   }
 }
 
+async function commandApply(dir, port, options = {}) {
+  const { lockRoot = ROOT, operationLockFn = withOperationLock } = options;
+  return operationLockFn(lockRoot, "apply", () => commandApplyUnlocked(dir, port, options));
+}
+
 async function commandStatus(port, { targetsFn = targets, selectTargetFn = selectMainTarget, evaluateListFn = evaluateAll, readStateFn = readState, platformFn = platform } = {}) {
   if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   const state = await readStateFn();
@@ -1565,7 +1588,7 @@ async function commandStatus(port, { targetsFn = targets, selectTargetFn = selec
   return { status: stale ? "stale" : pending ? "pending" : !reachable ? "unavailable" : verified ? "active" : "inactive", state: reachable ? { ...state, active: verified, restartPending: pending } : state, renderers: live };
 }
 
-async function commandRestore(port, restartNormal, { spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, targetsFn = targets, selectTargetFn = selectMainTarget, evaluateListFn = evaluateAll, readStateFn = readState, writeStateFn = writeState, removeStateFn = removeState, platformFn = platform } = {}) {
+async function commandRestoreUnlocked(port, restartNormal, { spawnWorker = spawnRestartWorker, cancelWorkerFn = cancelWorker, targetsFn = targets, selectTargetFn = selectMainTarget, evaluateListFn = evaluateAll, readStateFn = readState, writeStateFn = writeState, removeStateFn = removeState, platformFn = platform } = {}) {
   if (!isSupportedPlatform(platformFn())) throw new Error("Codex Skin Studio supports macOS and Windows only");
   let removed = 0;
   let restoreError = null;
@@ -1614,6 +1637,11 @@ async function commandRestore(port, restartNormal, { spawnWorker = spawnRestartW
   return { status: "restored", removed, restoreError, restartNormalRequested: false, restartRequired: false };
 }
 
+async function commandRestore(port, restartNormal, options = {}) {
+  const { lockRoot = ROOT, operationLockFn = withOperationLock } = options;
+  return operationLockFn(lockRoot, "restore", () => commandRestoreUnlocked(port, restartNormal, options));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.command === "restart-worker") {
@@ -1643,7 +1671,7 @@ async function main() {
   console.log(args.jsonOutput ? json(result) : result.message || json(result));
 }
 
-export { BRAND_STYLE_PRESETS, appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, clearFailureState, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, installPersistenceWorker, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session };
+export { BRAND_STYLE_PRESETS, appDataRoot, appInfoSync, appCandidates, assetFlags, cancelWorker, clearFailureState, commandApply, commandDoctor, commandErrorCode, commandRestore, commandStatus, css, delay, discover, evaluateAll, injectTheme, injectionVerified, installPersistenceWorker, isPidRunning, isSupportedPlatform, launchApplication, listThemes, loadTheme, MAIN_TARGET_PROBE, parseArgs, persist, readState, removeState, processIds, quitApplication, restartWorker, restartWorkerCore, savedTheme, selectMainTarget, spawnRestartWorker, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates, writeState, EXPECTED_TEAM_ID, Session, classifyCodexTarget, readProcessIdentity };
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     const result = fail(commandErrorCode(error), error.message);

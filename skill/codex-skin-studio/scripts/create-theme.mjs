@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { BRAND_STYLE_PRESETS, commandApply, installPersistenceWorker, loadTheme, validateManifest } from "./apply.mjs";
+import { IMAGE_LIMITS, validateImageMetadata } from "./image-metadata.mjs";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 const REQUIRED_COLORS = ["accent", "secondary", "surface", "text"];
@@ -79,6 +80,9 @@ async function assertImage(file, label) {
   if (!IMAGE_EXTENSIONS.has(extension)) throw new Error(`${label} must be PNG, JPEG, or WebP`);
   const details = await stat(resolved);
   if (!details.isFile() || details.size === 0) throw new Error(`${label} must be a non-empty file`);
+  if (details.size > IMAGE_LIMITS.maxBytes) throw new Error(`${label} exceeds the ${IMAGE_LIMITS.maxBytes}-byte image limit`);
+  const bytes = await readFile(resolved);
+  validateImageMetadata(bytes, { expectedMime: { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" }[extension] });
   return resolved;
 }
 

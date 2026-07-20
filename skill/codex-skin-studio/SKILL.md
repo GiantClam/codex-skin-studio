@@ -809,6 +809,14 @@ reporting success from a detached schedule alone.
 
 ## Persist across ChatGPT Desktop restarts
 
+The lightweight runtime safety baseline is intentionally narrow: it validates
+image binary headers and actual MIME types before creating or applying assets,
+classifies ChatGPT Desktop CDP targets before injection, serializes apply and
+restore operations with an atomic user-local lock, writes monotonic state
+revisions, and compares process start identities during restart. These checks
+are adapted from upstream research without importing the upstream full
+Runtime/Controller product.
+
 CDP-injected CSS lives in renderer memory and disappears when ChatGPT Desktop exits or reloads. Saving `theme.json` alone cannot make CSS persistent. The supported opt-in solution is a platform-native worker that keeps ChatGPT Desktop on loopback CDP and re-injects the persisted theme whenever a renderer returns:
 
 ```bash

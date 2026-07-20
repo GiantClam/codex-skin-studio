@@ -79,6 +79,12 @@ temporarily unavailable, it keeps the last injected list as a fallback.
 Theme application is serialized inside the persistence worker so a background
 renderer-recovery pass cannot race a manual switch.
 
+The lightweight runtime also validates image binary headers and actual MIME
+types, classifies ChatGPT renderer targets, uses an atomic user-local operation
+lock, persists monotonic state revisions, and checks process start identities
+during restart. These safeguards are adapted from upstream research without
+importing the upstream full Runtime/Controller product.
+
 ## Repository Layout
 
 ```text
@@ -94,12 +100,16 @@ skill/codex-skin-studio/
 │   ├── create-paired.mjs
 │   ├── create-pet.mjs
 │   ├── create-theme.mjs
+│   ├── image-metadata.mjs
 │   ├── install-pet.mjs
+│   ├── operation-lock.mjs
 │   ├── paired-status.mjs
 │   ├── paired.mjs
 │   ├── pet.mjs
 │   ├── pet-desktop.mjs
 │   ├── persist.mjs
+│   ├── process-identity.mjs
+│   ├── target-classifier.mjs
 │   └── windows/
 │       └── apply.ps1
 ├── templates/

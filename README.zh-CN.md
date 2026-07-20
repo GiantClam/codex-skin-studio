@@ -64,6 +64,8 @@ Skill 负责 Agent 编排；`create-theme.mjs` 负责一次性生成完整主题
 `Skins` 菜单打开时会从本机回环 `/themes` 接口读取最新有效主题，挂载期间也会定时刷新。持久化 worker 暂时不可用时，会保留最近一次注入的主题列表作为缓存。
 持久化 worker 会串行执行主题应用，避免后台 Renderer 恢复检查与手动切换同时注入不同主题。
 
+轻量运行时还会校验图片二进制文件头和真实 MIME，分类 ChatGPT Renderer，使用用户本地原子应用锁，保存单调递增的状态 revision，并在重启过程中检查进程启动身份。这些能力参考上游研究实现，但没有引入上游完整 Runtime/Controller 产品。
+
 ## 目录结构
 
 ```text
@@ -79,12 +81,16 @@ skill/codex-skin-studio/
 │   ├── create-paired.mjs
 │   ├── create-pet.mjs
 │   ├── create-theme.mjs
+│   ├── image-metadata.mjs
 │   ├── install-pet.mjs
+│   ├── operation-lock.mjs
 │   ├── paired-status.mjs
 │   ├── paired.mjs
 │   ├── pet.mjs
 │   ├── pet-desktop.mjs
 │   ├── persist.mjs
+│   ├── process-identity.mjs
+│   ├── target-classifier.mjs
 │   └── windows/
 │       └── apply.ps1
 ├── templates/

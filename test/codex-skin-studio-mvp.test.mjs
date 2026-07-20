@@ -17,7 +17,11 @@ try { sharp = require("sharp"); } catch { /* Optional Pet image processor is bun
 
 import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, installPersistenceWorker, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
+import { parseImageMetadata, validateImageMetadata } from "../skill/codex-skin-studio/scripts/image-metadata.mjs";
 import { buildPlist, buildTaskXml, createControlServer, ensureAppAtStartup, parseArgs as parsePersistArgs, persistenceWorker, recoverRunningApp } from "../skill/codex-skin-studio/scripts/persist.mjs";
+import { acquireOperationLock, withOperationLock } from "../skill/codex-skin-studio/scripts/operation-lock.mjs";
+import { readProcessIdentity, sameProcessIdentity } from "../skill/codex-skin-studio/scripts/process-identity.mjs";
+import { classifyCodexTarget } from "../skill/codex-skin-studio/scripts/target-classifier.mjs";
 import { createPet, defaultPetsDir, DEFAULT_PET_ACTIONS, DEFAULT_PET_CONTRACT, CUSTOM_PET_ID, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
 import { buildMacOpenSettingsScript, buildWindowsOpenSettingsScript, OPEN_ACCOUNT_MENU_EXPRESSION, OPEN_PETS_PANEL_EXPRESSION, OPEN_SETTINGS_EXPRESSION, PET_UI_STATE_EXPRESSION, petSelectionStateExpression, REFRESH_PETS_EXPRESSION, selectPetExpression } from "../skill/codex-skin-studio/scripts/pet-desktop.mjs";
 import { parseArgs as parseVerifyPetContractArgs, verifyPetContract } from "../skill/codex-skin-studio/scripts/verify-pet-contract.mjs";
@@ -30,6 +34,7 @@ const skillRoot = join(repoRoot, "skill/codex-skin-studio");
 const applyScript = join(skillRoot, "scripts/apply.mjs");
 const createThemeScript = join(skillRoot, "scripts/create-theme.mjs");
 const packageScript = join(repoRoot, "scripts/package-codex-skin-studio.mjs");
+const VALID_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 const validManifest = {
   schemaVersion: 1,
@@ -77,7 +82,7 @@ async function withTempDir(prefix, callback) {
 async function makeTheme(root, manifest = validManifest) {
   await mkdir(root, { recursive: true });
   await writeFile(join(root, "theme.json"), JSON.stringify(manifest));
-  await writeFile(join(root, "hero.png"), Buffer.from([1]));
+  await writeFile(join(root, "hero.png"), VALID_PNG);
 }
 
 async function makePetFrames(root, contract = observedPetContract, { animate = true } = {}) {
@@ -100,6 +105,35 @@ test("accepts and normalizes a valid theme manifest", () => {
     name: "Cyberpunk Night",
     colors: { accent: "#00AAFF", secondary: "#FF00AA", surface: "#101018", text: "#FFFFFF" },
   });
+});
+
+test("parses real PNG metadata and rejects extension spoofing", () => {
+  assert.deepEqual(parseImageMetadata(VALID_PNG), { mime: "image/png", width: 1, height: 1 });
+  assert.throws(() => validateImageMetadata(Buffer.from("not-an-image")), /image header/);
+  assert.throws(() => validateImageMetadata(VALID_PNG, { expectedMime: "image/webp" }), /MIME/);
+});
+
+test("classifies only supported ChatGPT renderer targets", () => {
+  assert.equal(classifyCodexTarget({ type: "page", url: "app://-/index.html" }), "main");
+  assert.equal(classifyCodexTarget({ type: "page", url: "app://-/index.html?initialRoute=%2Favatar-overlay" }), "overlay");
+  assert.equal(classifyCodexTarget({ type: "page", url: "app://codex/home" }), "candidate");
+  assert.equal(classifyCodexTarget({ type: "page", url: "https://example.com/" }), "unknown");
+});
+
+test("operation lock serializes competing processes and releases cleanly", async () => {
+  await withTempDir("codex-skin-lock-", async (root) => {
+    const first = await acquireOperationLock(root, "apply");
+    await assert.rejects(acquireOperationLock(root, "apply"), /already in progress/);
+    await first.release();
+    let ran = false;
+    await withOperationLock(root, "restore", async () => { ran = true; });
+    assert.equal(ran, true);
+  });
+});
+
+test("process identity comparison rejects PID reuse with a different start time", () => {
+  assert.equal(sameProcessIdentity({ pid: 7, startedAt: "a" }, { pid: 7, startedAt: "a" }), true);
+  assert.equal(sameProcessIdentity({ pid: 7, startedAt: "a" }, { pid: 7, startedAt: "b" }), false);
 });
 
 test("rejects unsupported fields and invalid manifest values", () => {
@@ -318,8 +352,8 @@ test("validates a local non-empty theme without applying it", async () => {
 test("validates optional logo and polaroid assets", async () => {
   await withTempDir("codex-skin-assets-", async (root) => {
     await makeTheme(root, { ...validManifest, logo: "logo.png", polaroid: "polaroid.png" });
-    await writeFile(join(root, "logo.png"), Buffer.from([2]));
-    await writeFile(join(root, "polaroid.png"), Buffer.from([3]));
+    await writeFile(join(root, "logo.png"), VALID_PNG);
+    await writeFile(join(root, "polaroid.png"), VALID_PNG);
     const { stdout } = await execFileAsync(process.execPath, [applyScript, "validate", root, "--json"]);
     assert.deepEqual(JSON.parse(stdout), { status: "valid", themeId: validManifest.id, themeDir: root, hero: validManifest.hero, logo: "logo.png", polaroid: "polaroid.png" });
   });
@@ -336,7 +370,7 @@ test("validates and returns optional brand workbench copy", async () => {
 test("creates a complete theme directory in one deterministic command", async () => {
   await withTempDir("codex-skin-create-", async (root) => {
     const hero = join(root, "source.webp");
-    const logo = join(root, "source-logo.png");
+    const logo = join(root, "source-logo.webp");
     const themeDir = join(root, "theme");
     const validImage = await readFile(join(skillRoot, "examples/slayers-xellos-night/hero.webp"));
     await writeFile(hero, validImage);
@@ -485,7 +519,7 @@ test("discovers Microsoft Store ChatGPT package executable candidates", () => {
 
 test("rejects a hero symlink that resolves outside the theme directory", async (t) => {
   await withTempDir("codex-skin-outside-", async (outside) => {
-    await writeFile(join(outside, "hero.png"), Buffer.from([1]));
+    await writeFile(join(outside, "hero.png"), VALID_PNG);
     await withTempDir("codex-skin-theme-", async (root) => {
       await writeFile(join(root, "theme.json"), JSON.stringify({ ...validManifest, hero: "linked/hero.png" }));
       try {
@@ -589,8 +623,8 @@ test("atomically persists optional logo and polaroid assets", async () => {
     await mkdir(source, { recursive: true });
     const manifest = validateManifest({ ...validManifest, logo: "logo.png", polaroid: "polaroid.png" });
     await makeTheme(source, manifest);
-    await writeFile(join(source, "logo.png"), Buffer.from([2]));
-    await writeFile(join(source, "polaroid.png"), Buffer.from([3]));
+    await writeFile(join(source, "logo.png"), VALID_PNG);
+    await writeFile(join(source, "polaroid.png"), VALID_PNG);
     const saved = await persist({ root: source, hero: join(source, "hero.png"), logo: join(source, "logo.png"), polaroid: join(source, "polaroid.png"), manifest }, { themesDir: themes });
     assert.deepEqual((await readdir(saved.destination)).sort(), ["hero.png", "logo.png", "polaroid.png", "theme.json"]);
     assert.deepEqual(JSON.parse(await readFile(join(saved.destination, "theme.json"), "utf8")).logo, "logo.png");
@@ -1074,7 +1108,7 @@ test("same-ID failed replacement rolls back the old hero and theme manifest", as
       readStateFn: async () => ({ active: true, themeId: validManifest.id }),
       writeStateFn: async () => {},
     }), /replacement failed/);
-    assert.equal(await readFile(join(themes, validManifest.id, "hero.png"), "utf8"), "\x01");
+    assert.deepEqual(await readFile(join(themes, validManifest.id, "hero.png")), VALID_PNG);
     assert.equal(JSON.parse(await readFile(join(themes, validManifest.id, "theme.json"), "utf8")).name, "Old Theme");
   });
 });
@@ -1632,7 +1666,7 @@ test("paired switch preserves an explicit manual-refresh fallback when native UI
 });
 
 test("distribution files are English ASCII text and SKILL has valid frontmatter", async () => {
-  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/install-pet.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet-desktop.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/remote-skins.mjs", "scripts/switch-paired.mjs", "scripts/upload-theme.mjs", "scripts/validate-pet.mjs", "scripts/verify-pet-contract.mjs", "scripts/verify-pet-desktop.mjs", "scripts/windows/apply.ps1", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
+  const textExpected = ["SKILL.md", "agents/openai.yaml", "examples/cyberpunk/prompt.md", "examples/cyberpunk/theme.json", "examples/pets/mascot/pet.json", "examples/slayers-xellos-night/theme.json", "scripts/apply.mjs", "scripts/create-paired.mjs", "scripts/create-pet.mjs", "scripts/create-theme.mjs", "scripts/image-metadata.mjs", "scripts/install-pet.mjs", "scripts/operation-lock.mjs", "scripts/paired-status.mjs", "scripts/paired.mjs", "scripts/pet-desktop.mjs", "scripts/pet.mjs", "scripts/persist.mjs", "scripts/process-identity.mjs", "scripts/remote-skins.mjs", "scripts/switch-paired.mjs", "scripts/target-classifier.mjs", "scripts/upload-theme.mjs", "scripts/validate-pet.mjs", "scripts/verify-pet-contract.mjs", "scripts/verify-pet-desktop.mjs", "scripts/windows/apply.ps1", "templates/pet-contract.json", "templates/pet.json", "templates/theme.json"].sort((a, b) => a.localeCompare(b));
   const binaryExpected = ["examples/pets/mascot/spritesheet.webp", "examples/slayers-xellos-night/hero.webp"];
   assert.deepEqual((await listFiles(skillRoot)).map((value) => value.replaceAll("\\", "/")), [...textExpected, ...binaryExpected].sort((a, b) => a.localeCompare(b)));
   const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
@@ -1720,16 +1754,20 @@ test("package script creates exactly the new Skill folder contents", async () =>
     "codex-skin-studio/scripts/create-paired.mjs",
     "codex-skin-studio/scripts/create-pet.mjs",
     "codex-skin-studio/scripts/create-theme.mjs",
+    "codex-skin-studio/scripts/image-metadata.mjs",
     "codex-skin-studio/scripts/install-pet.mjs",
+    "codex-skin-studio/scripts/operation-lock.mjs",
     "codex-skin-studio/scripts/paired-status.mjs",
     "codex-skin-studio/scripts/paired.mjs",
     "codex-skin-studio/scripts/pet.mjs",
     "codex-skin-studio/scripts/persist.mjs",
     "codex-skin-studio/scripts/pet-desktop.mjs",
+    "codex-skin-studio/scripts/process-identity.mjs",
     "codex-skin-studio/scripts/remote-skins.mjs",
     "codex-skin-studio/scripts/windows/",
     "codex-skin-studio/scripts/windows/apply.ps1",
     "codex-skin-studio/scripts/switch-paired.mjs",
+    "codex-skin-studio/scripts/target-classifier.mjs",
     "codex-skin-studio/scripts/upload-theme.mjs",
     "codex-skin-studio/scripts/validate-pet.mjs",
     "codex-skin-studio/scripts/verify-pet-contract.mjs",

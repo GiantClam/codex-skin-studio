@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import {
+  appDataRoot,
   clearFailureState,
   commandApply,
   delay,
@@ -29,6 +30,7 @@ import {
   targets,
   writeState,
 } from "./apply.mjs";
+import { withOperationLock } from "./operation-lock.mjs";
 
 const execFileAsync = promisify(execFile);
 const LABEL = "com.openai.chatgpt.codex-skin-studio";
@@ -39,6 +41,10 @@ const LOG_DIR = join(homedir(), "Library", "Logs", "CodexSkinStudio");
 const WINDOWS_ROOT = join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "CodexSkinStudio");
 const TASK_NAME = "CodexSkinStudio";
 const TASK_XML_PATH = join(WINDOWS_ROOT, "persistence-task.xml");
+
+function operationRoot(platformName = platform()) {
+  return join(appDataRoot(platformName), "CodexSkinStudio");
+}
 
 function parseArgs(argv) {
   const command = argv.shift() || "status";
@@ -353,7 +359,7 @@ async function recoverRunningApp({ port = PORT, state, platformFn = platform, di
   return { status: "restarted", executable: info.executable, port };
 }
 
-async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, pollMs = 1500, startControlServerFn = startControlServer, platformFn = platform, delayFn = delay, readStateFn = readState, targetsFn = targets, selectMainTargetFn = selectMainTarget, evaluateListFn = evaluateAll, injectionVerifiedFn = injectionVerified, savedThemeFn = savedTheme, injectThemeFn = injectTheme, writeStateFn = writeState, startupFn = null, recoveryFn = null, nowFn = Date.now, recoveryCooldownMs = 5000, continueFn = () => true } = {}) {
+async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, pollMs = 1500, startControlServerFn = startControlServer, platformFn = platform, delayFn = delay, readStateFn = readState, targetsFn = targets, selectMainTargetFn = selectMainTarget, evaluateListFn = evaluateAll, injectionVerifiedFn = injectionVerified, savedThemeFn = savedTheme, injectThemeFn = injectTheme, writeStateFn = writeState, startupFn = null, recoveryFn = null, nowFn = Date.now, recoveryCooldownMs = 5000, continueFn = () => true, operationLockFn = withOperationLock, operationRootPath = operationRoot(platformFn()) } = {}) {
   if (!isSupportedPlatform(platformFn())) throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
   const applyLock = { active: false };
   await startControlServerFn({ port: controlPort, cdpPort: port, applyLock });
@@ -377,7 +383,9 @@ async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, poll
         if (recoveryFn && nowFn() >= recoveryAfter) {
           recoveryAfter = nowFn() + recoveryCooldownMs;
           applyLock.active = true;
-          try { await recoveryFn({ port, state }); } catch { /* Keep the worker alive while the user is launching or closing the app. */ }
+          try {
+            await operationLockFn(operationRootPath, "recovery", () => recoveryFn({ port, state }));
+          } catch { /* Keep the worker alive while the user is launching or closing the app. */ }
           applyLock.active = false;
         }
         await delayFn(pollMs);

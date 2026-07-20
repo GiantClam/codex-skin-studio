@@ -18,7 +18,7 @@ try { sharp = require("sharp"); } catch { /* Optional Pet image processor is bun
 import { appCandidates, appInfoSync, commandApply, commandErrorCode, commandRestore, commandStatus, css, EXPECTED_TEAM_ID, injectTheme, injectionVerified, installPersistenceWorker, isPidRunning, MAIN_TARGET_PROBE, parseArgs, persist, processIds, readState, restartWorker, restartWorkerCore, selectMainTarget, Session, STATUS_EXPRESSION, styleExpression, targets, validateManifest, waitForProcessExit, waitForProcessStart, windowsStoreCandidates } from "../skill/codex-skin-studio/scripts/apply.mjs";
 import { applyPort, parseArgs as parseCreateArgs } from "../skill/codex-skin-studio/scripts/create-theme.mjs";
 import { buildPlist, buildTaskXml, createControlServer, ensureAppAtStartup, parseArgs as parsePersistArgs, persistenceWorker, recoverRunningApp } from "../skill/codex-skin-studio/scripts/persist.mjs";
-import { createPet, defaultPetsDir, DEFAULT_PET_CONTRACT, CUSTOM_PET_ID, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
+import { createPet, defaultPetsDir, DEFAULT_PET_ACTIONS, DEFAULT_PET_CONTRACT, CUSTOM_PET_ID, installPet, petStatus, validateContract, validatePetDirectory } from "../skill/codex-skin-studio/scripts/pet.mjs";
 import { buildMacOpenSettingsScript, buildWindowsOpenSettingsScript, OPEN_ACCOUNT_MENU_EXPRESSION, OPEN_PETS_PANEL_EXPRESSION, OPEN_SETTINGS_EXPRESSION, PET_UI_STATE_EXPRESSION, petSelectionStateExpression, REFRESH_PETS_EXPRESSION, selectPetExpression } from "../skill/codex-skin-studio/scripts/pet-desktop.mjs";
 import { parseArgs as parseVerifyPetContractArgs, verifyPetContract } from "../skill/codex-skin-studio/scripts/verify-pet-contract.mjs";
 import { parseArgs as parseVerifyPetArgs, verifyPetDesktop } from "../skill/codex-skin-studio/scripts/verify-pet-desktop.mjs";
@@ -1381,6 +1381,16 @@ test("pet contracts reject provisional data until the observed contract is suppl
   assert.throws(() => validateContract({ ...observedPetContract, spriteVersionNumber: 1 }), /spriteVersionNumber 2/);
 });
 
+test("maps the required Pet actions onto the fixed native rows", () => {
+  assert.deepEqual(DEFAULT_PET_ACTIONS, {
+    office: { row: "running", frames: 6, description: "Using a computer with visible keyboard, mouse, screen, eye, and hand changes." },
+    thinking: { row: "review", frames: 6, description: "Thinking with one hand supporting the chin, changing gaze, blink, and head tilt." },
+    fitness: { row: "jumping", frames: 5, description: "Working out with dumbbells through a readable lift, press, squat, and recovery cycle." },
+    resting: { row: "waiting", frames: 6, description: "Sleeping or resting with closed eyes, breathing, head movement, and a relaxed pose." },
+  });
+  assert.deepEqual(DEFAULT_PET_CONTRACT.actions, DEFAULT_PET_ACTIONS);
+});
+
 test("resolves Pet roots for macOS and Windows without hard-coded user paths", () => {
   assert.equal(defaultPetsDir({ platform: "darwin", env: { HOME: "/Users/tester" } }), join("/Users/tester", ".codex", "pets"));
   assert.equal(defaultPetsDir({ platform: "win32", env: { USERPROFILE: "C:\\Users\\Tester" } }), "C:\\Users\\Tester\\.codex\\pets");
@@ -1399,6 +1409,7 @@ test("creates, validates, installs, and reports a deterministic Pet atlas", { sk
       description: "A cute anthropomorphic desktop companion.",
       spriteVersionNumber: 2,
       spritesheetPath: createdManifest.spritesheetPath,
+      actions: DEFAULT_PET_ACTIONS,
     });
     assert.ok(["spritesheet.webp", "spritesheet.png"].includes(createdManifest.spritesheetPath));
     const validated = await validatePetDirectory(join(root, "pet"), { contract: observedPetContract });

@@ -3,5 +3,11 @@
   "displayName": "Pet Name",
   "description": "A cute chibi humanoid desktop companion.",
   "spriteVersionNumber": 2,
-  "spritesheetPath": "spritesheet.webp"
+  "spritesheetPath": "spritesheet.webp",
+  "actions": {
+    "office": { "row": "running", "frames": 6, "description": "Using a computer with visible keyboard, mouse, screen, eye, and hand changes." },
+    "thinking": { "row": "review", "frames": 6, "description": "Thinking with one hand supporting the chin, changing gaze, blink, and head tilt." },
+    "fitness": { "row": "jumping", "frames": 5, "description": "Working out with dumbbells through a readable lift, press, squat, and recovery cycle." },
+    "resting": { "row": "waiting", "frames": 6, "description": "Sleeping or resting with closed eyes, breathing, head movement, and a relaxed pose." }
+  }
 }

@@ -52,6 +52,15 @@ const DEFAULT_ROWS = [
   { name: "look-180-to-337.5", frames: 8 },
 ];
 
+// Keep these semantic actions on observed native rows; adding atlas rows would
+// break ChatGPT Desktop's fixed 8x11 Pet contract.
+export const DEFAULT_PET_ACTIONS = {
+  office: { row: "running", frames: 6, description: "Using a computer with visible keyboard, mouse, screen, eye, and hand changes." },
+  thinking: { row: "review", frames: 6, description: "Thinking with one hand supporting the chin, changing gaze, blink, and head tilt." },
+  fitness: { row: "jumping", frames: 5, description: "Working out with dumbbells through a readable lift, press, squat, and recovery cycle." },
+  resting: { row: "waiting", frames: 6, description: "Sleeping or resting with closed eyes, breathing, head movement, and a relaxed pose." },
+};
+
 export const DEFAULT_PET_CONTRACT = {
   schemaVersion: PET_CONTRACT_SCHEMA,
   contractVersion: "codex-v2-hatch-pet",
@@ -62,6 +71,7 @@ export const DEFAULT_PET_CONTRACT = {
   frame: { width: 192, height: 208 },
   spritesheet: { format: ["webp", "png"], colorMode: "rgba", maxBytes: DEFAULT_MAX_ATLAS_BYTES },
   rows: DEFAULT_ROWS,
+  actions: DEFAULT_PET_ACTIONS,
   neutralLookFrame: { row: 0, column: 6 },
   lookDirections: ["000", "022.5", "045", "067.5", "090", "112.5", "135", "157.5", "180", "202.5", "225", "247.5", "270", "292.5", "315", "337.5"],
 };
@@ -144,6 +154,16 @@ function rowFrameCount(row) {
   return rowSpec(row).frames;
 }
 
+function actionMap(contract) {
+  const actions = contract.actions && typeof contract.actions === "object" ? contract.actions : DEFAULT_PET_ACTIONS;
+  const rows = new Map(rowSpecs(contract).map((row) => [row.name, row.frames]));
+  for (const [name, action] of Object.entries(DEFAULT_PET_ACTIONS)) {
+    const selected = actions[name];
+    if (!selected || typeof selected.row !== "string" || rows.get(selected.row) !== selected.frames) throw petError("PET_CONTRACT_MISMATCH", `pet action ${name} must map to an observed row with the expected frame count`);
+  }
+  return actions;
+}
+
 export function validateContract(contract, { allowProvisional = false } = {}) {
   if (!contract || typeof contract !== "object") throw petError("PET_CONTRACT_MISMATCH", "pet contract must be an object");
   if (contract.schemaVersion !== PET_CONTRACT_SCHEMA) throw petError("PET_CONTRACT_MISMATCH", `unsupported pet contract schema: ${contract.schemaVersion}`);
@@ -158,6 +178,7 @@ export function validateContract(contract, { allowProvisional = false } = {}) {
   if (specs.some((row) => !row || typeof row.name !== "string" || !row.name.trim() || !Number.isInteger(row.frames) || row.frames < 1 || row.frames > contract.grid.columns)) throw petError("PET_CONTRACT_MISMATCH", "every pet row must define a name and one through eight frames");
   if (new Set(specs.map((row) => row.name)).size !== specs.length) throw petError("PET_CONTRACT_MISMATCH", "pet contract row names must be unique");
   if (specs.some((row, index) => row.name !== DEFAULT_ROWS[index].name || row.frames !== DEFAULT_ROWS[index].frames)) throw petError("PET_CONTRACT_MISMATCH", "pet contract rows must match the Codex V2 animation and look-direction layout");
+  actionMap(contract);
   if (!contract.neutralLookFrame || contract.neutralLookFrame.row !== 0 || contract.neutralLookFrame.column !== 6) throw petError("PET_CONTRACT_MISMATCH", "v2 pet contract must reserve row 0 column 6 for the neutral look frame");
   if (!Array.isArray(contract.lookDirections) || contract.lookDirections.length !== 16) throw petError("PET_CONTRACT_MISMATCH", "v2 pet contract must define sixteen look directions");
   const formats = Array.isArray(contract.spritesheet?.format) ? contract.spritesheet.format : [contract.spritesheet?.format];
@@ -374,6 +395,7 @@ export async function createPet({ id, displayName, description, frames, out, con
       description: String(description || "A cute anthropomorphic desktop companion.").trim(),
       spriteVersionNumber: contract.spriteVersionNumber,
       spritesheetPath: `spritesheet.${encoded.extension}`,
+      actions: actionMap(contract),
     };
     await writeJsonFile(join(staging, "pet.json"), manifest);
     await validatePetDirectory(staging, { contract, allowProvisional: false });

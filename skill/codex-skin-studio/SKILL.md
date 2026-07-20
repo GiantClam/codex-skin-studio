@@ -472,6 +472,21 @@ character's identity or defining details.
 Use an explicit sequential pose brief for every row; never reuse one generated
 image for all frame files in a row:
 
+The fixed ChatGPT Desktop atlas exposes native row names. Do not add rows or
+rename them. Every generated Pet must expose these four user-facing actions in
+its `pet.json` action metadata while keeping the native rows in the frame
+manifest:
+
+| User-facing action | Native row | Required visual behavior |
+| --- | --- | --- |
+| `office` | `running` | Use a computer: visible screen or desk prop, keyboard or mouse contact, changing hands, eyes, head, and posture. |
+| `thinking` | `review` | Rest one hand under the chin, with changing gaze, blink, head tilt, and small posture transitions. |
+| `fitness` | `jumping` | Use dumbbells through a readable lift, press, squat, and recovery cycle; arms and legs must move independently. |
+| `resting` | `waiting` | Sleep or rest with closed eyes, breathing, head movement, and a relaxed body; do not submit six copies of one still pose. |
+
+These aliases are intentional compatibility mappings for the observed 8x11
+contract. They are not permission to create a new atlas row.
+
 - `idle`: six calm breathing or blink variations with a readable but subtle
   head, chest, eye, hair, or prop change.
 - `running-right` and `running-left`: eight alternating locomotion poses with
@@ -484,14 +499,17 @@ image for all frame files in a row:
   adjustments after the limb poses are genuinely different.
 - `waving`: four frames for hand down, hand rising, hand raised, and hand
   returning.
-- `jumping`: five frames for anticipation, lift, peak, descent, and settle.
+- `jumping`: five fitness frames with dumbbells: prepare, lift, overhead press,
+  controlled lower, and recovery. The arms, elbows, knees, and torso must show
+  a connected exercise sequence; do not use generic jumping poses.
 - `failed`: eight frames showing a clear deflated or sad reaction and recovery.
-- `waiting`: six distinct expectant poses, not copies of idle.
-- `running`: six active work or processing poses, not literal foot-running.
-  When this row represents locomotion in the target Pet, use the same
-  four-keyframe limb cycle as the directional running rows; otherwise create
-  six distinct work or processing poses.
-- `review`: six focused inspection poses with changing eyes, head tilt, or paw.
+- `waiting`: six distinct sleeping or resting poses with closed eyes, breathing,
+  head movement, and relaxed limbs, not copies of idle.
+- `running`: six office poses using a computer, with changing keyboard or mouse
+  contact, eyes, head angle, and posture; do not generate literal foot-running
+  for this semantic action.
+- `review`: six thinking poses with one hand supporting the chin and changing
+  gaze, blink, head tilt, and posture; do not generate generic code review only.
 - look-direction rows: sixteen coherent directional poses whose head, eyes,
   body, appendages, and props turn progressively clockwise.
 
@@ -531,12 +549,16 @@ Minimum semantic evidence before packaging:
   this order: front-foot contact, lifted-knee passing, opposite-foot contact,
   and airborne transition; arm swing must alternate with the legs.
 - `waving`: hand down, hand rising, hand fully raised, and hand returning.
-- `jumping`: anticipation, lift, peak, descent, and settle.
+- `jumping` / `fitness`: five connected dumbbell exercise keyframes with
+  independent arm and leg motion.
 - `failed`: surprise, droop, deflation, and recovery; expand to eight frames
   without creating duplicate adjacent states.
-- `waiting`: six expectant poses with changing eyes, paws, ears, and tail.
-- `running` or `review` when used for work: six focused coding or inspection
-  poses with changing paws, eyes, head angle, and work prop.
+- `waiting` / `resting`: six sleep or rest poses with closed eyes and readable
+  breathing or head transitions.
+- `running` / `office`: six focused computer-use poses with changing paws,
+  eyes, head angle, keyboard, mouse, or screen prop.
+- `review` / `thinking`: six chin-in-hand thinking poses with changing gaze,
+  blink, head angle, and arm support.
 - look-direction rows: eight progressive poses per row, covering all sixteen
   directions in the contract; do not substitute mirrored neutral frames.
 
@@ -634,6 +656,9 @@ deterministic per-cell anchoring, exact frame-canvas composition, neutral-frame
 insertion, RGBA WebP encoding, and v2 manifest creation. Every source frame is
 placed in an exact cell with a stable horizontal center and baseline; the
 jumping row is the only row that preserves intentional vertical displacement.
+Generated `pet.json` files include the canonical `office`, `thinking`,
+`fitness`, and `resting` action metadata. The atlas still uses the native row
+names so ChatGPT Desktop can read it.
 This prevents source-image padding from becoming sprite spacing or animation
 sampling drift. `validate-pet.mjs` checks the manifest,
 `spriteVersionNumber`, row frame counts, unused-cell transparency, dimensions,

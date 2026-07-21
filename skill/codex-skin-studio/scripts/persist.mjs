@@ -2,7 +2,7 @@
 
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +31,8 @@ import {
   writeState,
 } from "./apply.mjs";
 import { withOperationLock } from "./operation-lock.mjs";
+import { switchPairBundle } from "./paired.mjs";
+import { loadPetContract } from "./pet.mjs";
 
 const execFileAsync = promisify(execFile);
 const LABEL = "com.openai.chatgpt.codex-skin-studio";
@@ -41,6 +43,7 @@ const LOG_DIR = join(homedir(), "Library", "Logs", "CodexSkinStudio");
 const WINDOWS_ROOT = join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "CodexSkinStudio");
 const TASK_NAME = "CodexSkinStudio";
 const TASK_XML_PATH = join(WINDOWS_ROOT, "persistence-task.xml");
+const PET_CONTRACT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "templates", "pet-contract.json");
 
 function operationRoot(platformName = platform()) {
   return join(appDataRoot(platformName), "CodexSkinStudio");
@@ -262,10 +265,11 @@ function sendJson(response, statusCode, value) {
   response.end(JSON.stringify(value));
 }
 
-function sendControlPage(response, statusCode, message) {
+function sendControlPage(response, statusCode, message, result = null) {
   response.statusCode = statusCode;
+  const payload = JSON.stringify(result || { source: "codex-skin-studio", status: statusCode >= 400 ? "failed" : "applied", message }).replaceAll("<", "\\u003c");
   response.setHeader("content-type", "text/html; charset=utf-8");
-  response.end(`<!doctype html><meta charset="utf-8"><title>Codex Skin Studio</title><p>${message}</p><script>window.close()</script>`);
+  response.end(`<!doctype html><meta charset="utf-8"><title>Codex Skin Studio</title><p>${message}</p><script>window.opener?.postMessage(${payload}, "*"); window.close()</script>`);
 }
 
 async function requestBody(request, maxBytes = 4096) {
@@ -279,7 +283,12 @@ async function requestBody(request, maxBytes = 4096) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function createControlServer({ cdpPort = PORT, listThemesFn = listThemes, applyThemeFn = commandApply, applyLock = null } = {}) {
+async function defaultPairDirectory(themeId) {
+  const directory = join(appDataRoot(), "CodexSkinStudio", "pairs", themeId);
+  try { await stat(join(directory, "bundle.json")); return directory; } catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
+
+function createControlServer({ cdpPort = PORT, listThemesFn = listThemes, applyThemeFn = commandApply, switchPairFn = switchPairBundle, pairDirectoryFn = defaultPairDirectory, contractPath = PET_CONTRACT_PATH, applyLock = null } = {}) {
   let applying = false;
   const applyThemeId = async (id) => {
     if (applying || applyLock?.active) throw new Error("another skin is being applied");
@@ -289,6 +298,15 @@ function createControlServer({ cdpPort = PORT, listThemesFn = listThemes, applyT
       const themes = await listThemesFn();
       const theme = themes.find((item) => item.id === id);
       if (!theme) throw new Error("local theme was not found");
+      const pairDirectory = await pairDirectoryFn(id);
+      if (pairDirectory) {
+        const contract = await loadPetContract(contractPath);
+        const paired = await switchPairFn(pairDirectory, { contract, port: cdpPort, nativePet: true, installPersistenceFn: null });
+        if (paired.status !== "theme-applied-pet-selected" || paired.petSelection?.selection !== "native-ui-confirmed") {
+          throw new Error(paired.nextAction || "Theme applied, but the matching Pet was not selected");
+        }
+        return { status: "applied", themeId: id, paired: true, petSelection: paired.petSelection.selection, petId: paired.petSelection.petId, theme: paired.theme, pet: paired.pet };
+      }
       return await applyThemeFn(theme.themeDir, cdpPort);
     } finally {
       applying = false;
@@ -306,8 +324,12 @@ function createControlServer({ cdpPort = PORT, listThemesFn = listThemes, applyT
       if (request.method === "GET" && request.url?.startsWith("/apply?")) {
         const id = new URL(request.url, "http://127.0.0.1").searchParams.get("id");
         if (!id) return sendControlPage(response, 400, "Theme id is required");
-        await applyThemeId(id);
-        return sendControlPage(response, 200, "Skin applied");
+        try {
+          const result = await applyThemeId(id);
+          return sendControlPage(response, 200, "Skin applied", { source: "codex-skin-studio", ...result, themeId: result?.themeId || id });
+        } catch (error) {
+          return sendControlPage(response, 400, error.message, { source: "codex-skin-studio", status: "failed", themeId: id, message: error.message });
+        }
       }
       if (request.method === "POST" && request.url === "/apply") {
         const body = await requestBody(request);

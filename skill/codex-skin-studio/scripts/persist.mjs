@@ -354,7 +354,7 @@ async function startControlServer({ port = CONTROL_PORT, cdpPort = PORT, createS
   return server;
 }
 
-async function ensureAppAtStartup({ port = PORT, platformFn = platform, readStateFn = readState, discoverFn = discover, appInfoFn = appInfoSync, processIdsFn = processIds, launchFn = launchApplication } = {}) {
+async function ensureAppAtStartup({ port = PORT, platformFn = platform, readStateFn = readState, discoverFn = discover, appInfoFn = appInfoSync, processIdsFn = processIds, targetsFn = targets, restartWorkerFn = restartWorker, launchFn = launchApplication } = {}) {
   const currentPlatform = platformFn();
   if (!isSupportedPlatform(currentPlatform)) return { status: "skipped", reason: "unsupported-platform" };
   const state = await readStateFn();
@@ -363,7 +363,13 @@ async function ensureAppAtStartup({ port = PORT, platformFn = platform, readStat
   const info = app ? appInfoFn(app, currentPlatform) : null;
   if (!info?.valid) return { status: "idle", reason: "chatgpt-desktop-not-found" };
   const pids = await processIdsFn(info.executable, { platformFn: () => currentPlatform });
-  if (pids.length) return { status: "already-running", executable: info.executable };
+  if (pids.length) {
+    let liveTargets = [];
+    try { liveTargets = await targetsFn(port); } catch { /* A running app without CDP must be restarted below. */ }
+    if (liveTargets.length) return { status: "already-running", executable: info.executable };
+    await restartWorkerFn(port);
+    return { status: "restarted", executable: info.executable, port };
+  }
   launchFn(app, port, currentPlatform, false);
   return { status: "launched", executable: info.executable, port };
 }
@@ -384,9 +390,22 @@ async function recoverRunningApp({ port = PORT, state, platformFn = platform, di
 async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, pollMs = 1500, startControlServerFn = startControlServer, platformFn = platform, delayFn = delay, readStateFn = readState, targetsFn = targets, selectMainTargetFn = selectMainTarget, evaluateListFn = evaluateAll, injectionVerifiedFn = injectionVerified, savedThemeFn = savedTheme, injectThemeFn = injectTheme, writeStateFn = writeState, startupFn = null, recoveryFn = null, nowFn = Date.now, recoveryCooldownMs = 5000, continueFn = () => true, operationLockFn = withOperationLock, operationRootPath = operationRoot(platformFn()) } = {}) {
   if (!isSupportedPlatform(platformFn())) throw new Error("ChatGPT Skin Studio persistence supports macOS and Windows only");
   const applyLock = { active: false };
+  const reportRecoveryFailure = async (state, error) => {
+    const message = String(error?.message || error || "skin recovery failed");
+    try {
+      await writeStateFn({ ...(state || {}), active: false, restartPending: false, restartWorkerPid: null, failedAt: new Date(nowFn()).toISOString(), error: message });
+    } catch {
+      // Preserve the original recovery failure even when state persistence is unavailable.
+    }
+    console.error(JSON.stringify({ status: "failed", code: "RECOVERY_FAILED", message }));
+  };
   await startControlServerFn({ port: controlPort, cdpPort: port, applyLock });
   if (startupFn) {
-    try { await startupFn({ port }); } catch { /* A later renderer recovery attempt can still restore the selected theme. */ }
+    try {
+      await startupFn({ port, targetsFn });
+    } catch (error) {
+      await reportRecoveryFailure(await readStateFn().catch(() => null), error);
+    }
   }
   let recoveryAfter = 0;
   while (continueFn()) {
@@ -407,7 +426,9 @@ async function persistenceWorker({ port = PORT, controlPort = CONTROL_PORT, poll
           applyLock.active = true;
           try {
             await operationLockFn(operationRootPath, "recovery", () => recoveryFn({ port, state }));
-          } catch { /* Keep the worker alive while the user is launching or closing the app. */ }
+          } catch (error) {
+            await reportRecoveryFailure(state, error);
+          }
           applyLock.active = false;
         }
         await delayFn(pollMs);
@@ -455,7 +476,7 @@ async function main() {
     if (args.command === "install") result = await installPersistence({ port: args.port, controlPort: args.controlPort });
     else if (args.command === "uninstall") result = await uninstallPersistence();
     else if (args.command === "status") result = await persistenceStatus();
-    else if (args.command === "persistence-worker") return persistenceWorker({ port: args.port, controlPort: args.controlPort, startupFn: ensureAppAtStartup, recoveryFn: recoverRunningApp });
+    else if (args.command === "persistence-worker") return persistenceWorker({ port: args.port, controlPort: args.controlPort, startupFn: (options) => ensureAppAtStartup({ ...options, restartWorkerFn: restartWorker }), recoveryFn: recoverRunningApp });
     else throw new Error("usage: persist.mjs install|uninstall|status|persistence-worker [--port PORT] [--control-port PORT] [--json]");
     process.stdout.write(`${args.jsonOutput ? JSON.stringify(result, null, 2) : result.status}\n`);
   } catch (error) {

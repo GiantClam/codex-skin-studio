@@ -488,6 +488,38 @@ test("persistence startup launches a selected theme with loopback CDP", async ()
   assert.deepEqual(launch, ["/Applications/ChatGPT.app", 9341, "darwin", false]);
 });
 
+test("persistence startup restarts an already-open app when CDP is unavailable", async () => {
+  let restarted = null;
+  const result = await ensureAppAtStartup({
+    port: 9341,
+    platformFn: () => "darwin",
+    readStateFn: async () => ({ themeId: "miku", themeDir: "/tmp/miku" }),
+    discoverFn: () => "/Applications/ChatGPT.app",
+    appInfoFn: () => ({ valid: true, executable: "ChatGPT" }),
+    processIdsFn: async () => [321],
+    targetsFn: async () => { throw new Error("fetch failed"); },
+    restartWorkerFn: async (port) => { restarted = port; },
+  });
+  assert.equal(result.status, "restarted");
+  assert.equal(restarted, 9341);
+});
+
+test("persistence startup keeps an already-open app when CDP is available", async () => {
+  let restarted = false;
+  const result = await ensureAppAtStartup({
+    port: 9341,
+    platformFn: () => "darwin",
+    readStateFn: async () => ({ themeId: "miku", themeDir: "/tmp/miku" }),
+    discoverFn: () => "/Applications/ChatGPT.app",
+    appInfoFn: () => ({ valid: true, executable: "ChatGPT" }),
+    processIdsFn: async () => [321],
+    targetsFn: async () => [{ type: "page" }],
+    restartWorkerFn: async () => { restarted = true; },
+  });
+  assert.equal(result.status, "already-running");
+  assert.equal(restarted, false);
+});
+
 test("persistence recovers a manually opened app without CDP", async () => {
   let restarted = null;
   const result = await recoverRunningApp({
